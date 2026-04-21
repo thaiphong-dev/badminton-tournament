@@ -15,7 +15,11 @@ import { cn } from '@/lib/utils/cn'
 
 const BRACKET_HEIGHT = 640   // px – matches 8 R16 cards @ ~72px each + gaps
 
-export default function BracketView({ matches, playerMap, onMatchClick }) {
+/**
+ * containerRef – forward a ref here to use for image download from the parent.
+ * tournamentName – shown as a title in the downloaded image.
+ */
+export default function BracketView({ matches, playerMap, onMatchClick, containerRef, tournamentName }) {
   const byStage = useMemo(() => {
     const map = {}
     matches.forEach(m => {
@@ -33,7 +37,15 @@ export default function BracketView({ matches, playerMap, onMatchClick }) {
   const third = byStage['third_place']?.[0] ?? null
 
   return (
-    <div className="overflow-x-auto pb-4 -mx-2 px-2">
+    <div className="bg-white rounded-xl overflow-x-auto pb-4">
+      {/* inline-block wrapper = capture target: its natural width equals full bracket content */}
+      <div ref={containerRef} className="inline-block bg-white p-4 rounded-xl">
+      {/* Title shown in downloaded image */}
+      {tournamentName && (
+        <p className="text-center text-sm font-semibold text-gray-500 mb-3 tracking-wide uppercase whitespace-nowrap">
+          {tournamentName} · Sơ đồ giải đấu
+        </p>
+      )}
       <div
         className="flex items-stretch min-w-max"
         style={{ height: BRACKET_HEIGHT }}
@@ -115,9 +127,11 @@ export default function BracketView({ matches, playerMap, onMatchClick }) {
           </div>
         </div>
       </div>
+      </div>
     </div>
   )
 }
+
 
 // ── Round column wrapper ──────────────────────────────────────────────────────
 

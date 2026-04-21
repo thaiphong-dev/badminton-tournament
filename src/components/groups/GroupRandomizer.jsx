@@ -1,19 +1,33 @@
-import { useState } from 'react'
-import { Shuffle, RefreshCw, CheckCircle, AlertCircle, ChevronRight, Users } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Shuffle, RefreshCw, CheckCircle, AlertCircle, ChevronRight, Users, ImageDown } from 'lucide-react'
 import { randomizeGroups } from '@/lib/utils/groupRandomizer'
 import { saveGroupsAndMatches } from '@/lib/utils/matchScheduler'
 import { buildClubColorMap } from '@/components/groups/GroupCard'
 import GroupCard from '@/components/groups/GroupCard'
 import Button from '@/components/ui/Button'
+import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 
 // Phase: idle → preview → saving → done
 export default function GroupRandomizer({ tournament, players, onConfirmed }) {
-  const [phase, setPhase] = useState('idle')       // 'idle' | 'preview' | 'saving'
-  const [groups, setGroups] = useState([])
-  const [error, setError] = useState(null)
+  const [phase, setPhase]       = useState('idle')  // 'idle' | 'preview' | 'saving'
+  const [groups, setGroups]     = useState([])
+  const [error, setError]       = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const gridRef = useRef(null)
 
-  const numGroups = tournament.num_groups
+  const numGroups    = tournament.num_groups
   const clubColorMap = buildClubColorMap(players)
+
+  async function handleDownload() {
+    if (!gridRef.current) return
+    setDownloading(true)
+    try {
+      const safeName = tournament.name.replace(/[\\/:*?"<>|]/g, '_')
+      await downloadElementAsImage(gridRef.current, `${safeName}_bang_dau.png`)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   // ── Stats for preview ───────────────────────────────────────────────────────
   const totalMatches = groups.reduce((sum, g) => {
@@ -92,7 +106,17 @@ export default function GroupRandomizer({ tournament, players, onConfirmed }) {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            onClick={handleDownload}
+            loading={downloading}
+            disabled={phase === 'saving'}
+            title="Tải ảnh bảng đấu"
+          >
+            <ImageDown className="w-4 h-4" />
+            Tải ảnh
+          </Button>
           <Button
             variant="secondary"
             onClick={handleRandomize}
@@ -120,8 +144,8 @@ export default function GroupRandomizer({ tournament, players, onConfirmed }) {
         </div>
       )}
 
-      {/* Group cards grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {/* Group cards grid – wrapped in ref for image download */}
+      <div ref={gridRef} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3  bg-white p-2 rounded-xl">
         {groups.map((group, idx) => (
           <GroupCard
             key={idx}

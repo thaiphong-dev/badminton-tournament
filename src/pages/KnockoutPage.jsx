@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Trophy, Swords, Crown,
   CheckCircle2, Clock, Pencil, Loader2, AlertCircle,
-  LayoutList, GitBranch,
+  LayoutList, GitBranch, ChevronRight, ImageDown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS } from '@/lib/constants'
@@ -14,6 +14,7 @@ import Badge from '@/components/ui/Badge'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ScoreModal from '@/components/shared/ScoreModal'
 import BracketView from '@/components/knockout/BracketView'
+import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 import { cn } from '@/lib/utils/cn'
 
 // ── Stage config ──────────────────────────────────────────────────────────────
@@ -38,9 +39,22 @@ export default function KnockoutPage() {
   const [loading, setLoading]         = useState(true)
   const [generating, setGenerating]   = useState(false)
   const [error, setError]             = useState(null)
-  const [activeStage, setActiveStage] = useState('round_of_16')
-  const [scoreMatch, setScoreMatch]   = useState(null)
-  const [viewMode, setViewMode]       = useState('list')  // 'list' | 'bracket'
+  const [activeStage, setActiveStage]   = useState('round_of_16')
+  const [scoreMatch, setScoreMatch]     = useState(null)
+  const [viewMode, setViewMode]         = useState('list')  // 'list' | 'bracket'
+  const [downloading, setDownloading]   = useState(false)
+  const bracketRef = useRef(null)
+
+  async function handleDownloadBracket() {
+    if (!bracketRef.current) return
+    setDownloading(true)
+    try {
+      const safeName = (tournament?.name ?? 'bracket').replace(/[\\/:*?"<>|]/g, '_')
+      await downloadElementAsImage(bracketRef.current, `${safeName}_so_do.png`)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => { fetchAll() }, [id])
 
@@ -246,14 +260,22 @@ export default function KnockoutPage() {
         </div>
       </div>
 
-      {/* Champion banner */}
+      {/* Champion banner + results CTA */}
       {champion && (
-        <div className="bg-linear-to-r from-yellow-400 to-amber-400 rounded-xl p-5 mb-6 flex items-center gap-4 shadow-md">
-          <Crown className="w-10 h-10 text-white shrink-0" />
-          <div>
-            <p className="text-yellow-100 text-sm font-medium">🏆 Vô địch</p>
-            <p className="text-white text-2xl font-bold">{champion.name}</p>
-            <p className="text-yellow-100 text-sm">{champion.club}</p>
+        <div className="mb-6 space-y-3">
+          <div className="bg-linear-to-r from-yellow-400 to-amber-400 rounded-xl p-5 flex items-center gap-4 shadow-md">
+            <Crown className="w-10 h-10 text-white shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-yellow-100 text-sm font-medium">🏆 Vô địch</p>
+              <p className="text-white text-2xl font-bold truncate">{champion.name}</p>
+              <p className="text-yellow-100 text-sm">{champion.club}</p>
+            </div>
+            <Link
+              to={`/tournament/${id}/results`}
+              className="shrink-0 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              Xem kết quả <ChevronRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       )}
@@ -303,10 +325,21 @@ export default function KnockoutPage() {
           )}
 
           {viewMode === 'bracket' && (
-            <div className="flex-1 flex items-center px-4 py-2">
+            <div className="flex-1 flex items-center justify-between px-4 py-2">
               <span className="text-sm font-medium text-purple-600 flex items-center gap-1.5">
                 <GitBranch className="w-4 h-4" /> Sơ đồ giải đấu
               </span>
+              <button
+                onClick={handleDownloadBracket}
+                disabled={downloading}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-purple-600 bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+              >
+                {downloading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <ImageDown className="w-3.5 h-3.5" />
+                }
+                Tải ảnh
+              </button>
             </div>
           )}
 
@@ -346,6 +379,8 @@ export default function KnockoutPage() {
               matches={matches}
               playerMap={playerMap}
               onMatchClick={setScoreMatch}
+              containerRef={bracketRef}
+              tournamentName={tournament?.name}
             />
           ) : activeStage === 'final' ? (
             <FinalsView

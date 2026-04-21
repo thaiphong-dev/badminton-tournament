@@ -35,7 +35,7 @@ export const DEFAULT_TOURNAMENT_CONFIG = {
 
 export const STAGE_LABELS = {
   [MATCH_STAGE.GROUP]: 'Vòng bảng',
-  [MATCH_STAGE.ROUND_OF_16]: '1/16',
+  [MATCH_STAGE.ROUND_OF_16]: '1/8',
   [MATCH_STAGE.QUARTER]: 'Tứ kết',
   [MATCH_STAGE.SEMI]: 'Bán kết',
   [MATCH_STAGE.FINAL]: 'Chung kết',

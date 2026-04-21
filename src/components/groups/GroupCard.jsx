@@ -27,7 +27,7 @@ export default function GroupCard({ group, groupIndex, clubColorMap = {}, compac
       compact ? '' : 'shadow-sm hover:shadow-md transition-shadow'
     )}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 flex items-center justify-between">
+      <div className="bg-linear-to-r from-blue-600 to-blue-500 px-4 py-2.5 flex items-center justify-between">
         <span className="text-white font-bold text-sm tracking-wide">Bảng {label}</span>
         <span className="text-blue-100 text-xs">{group.length} VĐV</span>
       </div>
@@ -41,12 +41,12 @@ export default function GroupCard({ group, groupIndex, clubColorMap = {}, compac
             : (clubColorMap[player.club] ?? CLUB_COLORS[0])
 
           return (
-            <li key={player.id || player._key || idx} className="px-4 py-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs text-gray-400 w-4 shrink-0">{idx + 1}</span>
-                <span className="text-sm font-medium text-gray-900 truncate">{player.name}</span>
+            <li key={player.id || player._key || idx} className="px-4 py-2.5 flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <span className="text-xs text-gray-400 w-4 shrink-0 pt-0.5">{idx + 1}</span>
+                <span className="text-sm font-medium text-gray-900 leading-snug">{player.name}</span>
               </div>
-              <span className={cn('text-xs px-2 py-0.5 rounded-full shrink-0 font-medium', colorClass)}>
+              <span className={cn('text-xs px-2 py-0.5 rounded-full shrink-0 font-medium mt-0.5', colorClass)}>
                 {player.club}
               </span>
             </li>
