@@ -66,13 +66,16 @@ export function calculateStandings(matches, players) {
 }
 
 /**
- * Validate match scores based on stage rules.
- * Group / R16 / Quarter: 1 set × 21 pts
- * Semi / Final:          best-of-3 × 15 pts
+ * Validate match scores based on scoring config.
+ *
+ * @param scores1       - player 1 scores array
+ * @param scores2       - player 2 scores array
+ * @param stage         - match stage key (used as legacy fallback only)
+ * @param opts          - optional { isBestOf3: boolean, pointsPerSet: number } from event config
  */
-export function validateMatchScores(scores1, scores2, stage) {
-  const isBestOf3 = ['semi', 'final'].includes(stage)
-  const pointsPerSet = isBestOf3 ? 15 : 21
+export function validateMatchScores(scores1, scores2, stage, opts = {}) {
+  const isBestOf3   = opts.isBestOf3   ?? ['semi', 'final', 'third_place'].includes(stage)
+  const pointsPerSet = opts.pointsPerSet ?? (isBestOf3 ? 15 : 21)
 
   if (!isBestOf3) {
     const [s1, s2] = [scores1[0] ?? 0, scores2[0] ?? 0]

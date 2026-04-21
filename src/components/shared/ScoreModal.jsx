@@ -2,21 +2,27 @@ import { useState, useEffect, useRef } from 'react'
 import { X, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { validateMatchScores, updateGroupStandingsInDB } from '@/lib/utils/standingsCalculator'
+import { getStageScoringRule } from '@/lib/utils/eventHelpers'
 import Button from '@/components/ui/Button'
 
 /**
  * Modal for entering match scores.
- * Handles both group stage (1 set × 21) and semi/final (best-of-3 × 15).
  *
  * Props:
- *  match       – match row from DB
- *  player1Name – resolved player name
- *  player2Name – resolved player name
- *  onClose     – called when modal dismissed
- *  onSaved     – called with updated match after successful save
+ *  match        – match row from DB
+ *  player1Name  – resolved player name
+ *  player2Name  – resolved player name
+ *  scoringRules – optional event.scoring_rules JSONB; if absent falls back to hardcoded defaults
+ *  onClose      – called when modal dismissed
+ *  onSaved      – called with updated match after successful save
  */
-export default function ScoreModal({ match, player1Name, player2Name, onClose, onSaved }) {
-  const isBestOf3 = ['semi', 'final'].includes(match.stage)
+export default function ScoreModal({ match, player1Name, player2Name, scoringRules, onClose, onSaved }) {
+  // Resolve sets + pointsPerSet from event config (or legacy hardcoded fallback)
+  const { sets, pointsPerSet } = scoringRules
+    ? getStageScoringRule(scoringRules, match.stage)
+    : { sets: ['semi', 'final', 'third_place'].includes(match.stage) ? 3 : 1, pointsPerSet: ['semi', 'final', 'third_place'].includes(match.stage) ? 15 : 21 }
+
+  const isBestOf3 = sets === 3
   const isEditing  = match.status === 'completed'
 
   // Pre-fill existing scores when editing a completed match
@@ -41,8 +47,7 @@ export default function ScoreModal({ match, player1Name, player2Name, onClose, o
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const numSets = isBestOf3 ? 3 : 1
-  const pointsPerSet = isBestOf3 ? 15 : 21
+  const numSets = sets
 
   function handleScore(player, setIdx, value) {
     const raw = value.replace(/\D/g, '').slice(0, 2)
@@ -63,7 +68,7 @@ export default function ScoreModal({ match, player1Name, player2Name, onClose, o
     const s1Active = s1.slice(0, activeSets)
     const s2Active = s2.slice(0, activeSets)
 
-    const { valid, error: vErr, winner } = validateMatchScores(s1Active, s2Active, match.stage)
+    const { valid, error: vErr, winner } = validateMatchScores(s1Active, s2Active, match.stage, { isBestOf3, pointsPerSet })
     if (!valid) { setError(vErr); return }
 
     setSaving(true)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Trophy, Plus, Calendar, Users, ChevronRight, Loader2 } from 'lucide-react'
+import { Trophy, Plus, Calendar, Layers, ChevronRight, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS } from '@/lib/constants'
 import Badge from '@/components/ui/Badge'
@@ -10,13 +10,6 @@ const STATUS_BADGE_VARIANT = {
   group_stage: 'blue',
   knockout: 'purple',
   completed: 'green',
-}
-
-const STAGE_ROUTE = {
-  setup: 'setup',
-  group_stage: 'groups',
-  knockout: 'knockout',
-  completed: 'results',
 }
 
 export default function Home() {
@@ -34,7 +27,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from('tournaments')
-        .select('*, players(count)')
+        .select('*, events(count)')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -88,12 +81,11 @@ export default function Home() {
 }
 
 function TournamentCard({ tournament }) {
-  const route = STAGE_ROUTE[tournament.status] || 'setup'
-  const playerCount = tournament.players?.[0]?.count ?? 0
+  const eventCount = tournament.events?.[0]?.count ?? 0
 
   return (
     <Link
-      to={`/tournament/${tournament.id}/${route}`}
+      to={`/tournament/${tournament.id}`}
       className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition-all group"
     >
       <div className="flex items-start justify-between mb-4">
@@ -111,17 +103,20 @@ function TournamentCard({ tournament }) {
 
       <div className="flex items-center gap-4 text-sm text-gray-500 mt-3">
         <span className="flex items-center gap-1">
-          <Users className="w-4 h-4" />
-          {playerCount} VĐV
+          <Layers className="w-4 h-4" />
+          {eventCount} nội dung
         </span>
         <span className="flex items-center gap-1">
           <Calendar className="w-4 h-4" />
-          {new Date(tournament.created_at).toLocaleDateString('vi-VN')}
+          {tournament.status === 'completed' && tournament.completed_at
+            ? `Xong ${new Date(tournament.completed_at).toLocaleDateString('vi-VN')}`
+            : new Date(tournament.created_at).toLocaleDateString('vi-VN')
+          }
         </span>
       </div>
 
       <div className="flex items-center justify-end mt-4 text-blue-600 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-        Xem chi tiết <ChevronRight className="w-4 h-4 ml-0.5" />
+        Xem tổng quan <ChevronRight className="w-4 h-4 ml-0.5" />
       </div>
     </Link>
   )

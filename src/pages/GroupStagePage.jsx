@@ -1,66 +1,76 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trophy, Users, LayoutGrid } from 'lucide-react'
+import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { STATUS_LABELS } from '@/lib/constants'
+import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
+import { getStageScoringRule } from '@/lib/utils/eventHelpers'
 import { calculateStandings } from '@/lib/utils/standingsCalculator'
 import { buildClubColorMap } from '@/components/groups/GroupCard'
 import Badge from '@/components/ui/Badge'
-import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import GroupRandomizer from '@/components/groups/GroupRandomizer'
 import StandingsTable from '@/components/groups/StandingsTable'
 import MatchList from '@/components/groups/MatchList'
 import ScoreModal from '@/components/shared/ScoreModal'
 import QualifySection from '@/components/groups/QualifySection'
+import Breadcrumb from '@/components/layout/Breadcrumb'
 
 const STATUS_BADGE = {
   setup: 'yellow', group_stage: 'blue', knockout: 'purple', completed: 'green',
 }
 
 export default function GroupStagePage() {
-  const { id } = useParams()
+  const { id, eventId } = useParams()   // eventId is undefined on legacy routes
   const navigate = useNavigate()
 
   const [tournament, setTournament] = useState(null)
-  const [players, setPlayers] = useState([])      // all players
-  const [groups, setGroups] = useState([])         // groups with group_players
-  const [matches, setMatches] = useState([])       // all group-stage matches
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [event, setEvent]           = useState(null)
+  const [players, setPlayers]       = useState([])
+  const [groups, setGroups]         = useState([])
+  const [matches, setMatches]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState(null)
 
-  // UI state
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0)
-  const [scoreMatch, setScoreMatch] = useState(null)  // match being scored
+  const [scoreMatch, setScoreMatch]             = useState(null)
 
-  useEffect(() => { fetchAll() }, [id])
+  useEffect(() => { fetchAll() }, [id, eventId])
 
   // ── Data fetching ───────────────────────────────────────────────────────────
   async function fetchAll() {
     setLoading(true)
     setError(null)
     try {
-      const [tRes, pRes, gRes, mRes] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('id', id).single(),
-        supabase.from('players').select('*').eq('tournament_id', id).order('name'),
-        supabase
-          .from('groups')
-          .select('*, group_players(*, players(id, name, club))')
-          .eq('tournament_id', id)
-          .order('group_number'),
-        supabase
-          .from('matches')
-          .select('*')
-          .eq('tournament_id', id)
-          .eq('stage', 'group')
-          .order('match_number'),
+      // Always fetch tournament
+      const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
+      if (tRes.error) throw tRes.error
+      setTournament(tRes.data)
+
+      // Fetch event when in per-event route
+      let ev = null
+      if (eventId) {
+        const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
+        if (eRes.error) throw eRes.error
+        ev = eRes.data
+        setEvent(ev)
+      }
+
+      // Scope players / groups / matches to event when available, else to tournament
+      const [pRes, gRes, mRes] = await Promise.all([
+        eventId
+          ? supabase.from('players').select('*').eq('event_id', eventId).order('name')
+          : supabase.from('players').select('*').eq('tournament_id', id).order('name'),
+        eventId
+          ? supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('event_id', eventId).order('group_number')
+          : supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('tournament_id', id).order('group_number'),
+        eventId
+          ? supabase.from('matches').select('*').eq('event_id', eventId).eq('stage', 'group').order('match_number')
+          : supabase.from('matches').select('*').eq('tournament_id', id).eq('stage', 'group').order('match_number'),
       ])
 
-      if (tRes.error) throw tRes.error
       if (pRes.error) throw pRes.error
       if (gRes.error) throw gRes.error
       if (mRes.error) throw mRes.error
 
-      setTournament(tRes.data)
       setPlayers(pRes.data || [])
       setGroups(gRes.data || [])
       setMatches(mRes.data || [])
@@ -73,78 +83,110 @@ export default function GroupStagePage() {
   }
 
   // ── Derived data ────────────────────────────────────────────────────────────
-
-  // player id → player object (for name lookup in MatchList)
-  const playerMap = useMemo(
-    () => Object.fromEntries(players.map(p => [p.id, p])),
-    [players]
-  )
-
+  const playerMap    = useMemo(() => Object.fromEntries(players.map(p => [p.id, p])), [players])
   const clubColorMap = useMemo(() => buildClubColorMap(players), [players])
 
-  // Enrich each group with its players list and match stats
   const enrichedGroups = useMemo(() => {
     return groups.map(g => {
-      const gPlayers = (g.group_players || [])
-        .map(gp => gp.players)
-        .filter(Boolean)
-
+      const gPlayers = (g.group_players || []).map(gp => gp.players).filter(Boolean)
       const gMatches = matches.filter(m => m.group_id === g.id)
       const completed = gMatches.filter(m => m.status === 'completed').length
-      const total = gMatches.length
-
+      const total     = gMatches.length
       const standings = calculateStandings(gMatches, gPlayers)
-
       return { ...g, players: gPlayers, matches: gMatches, completed, total, standings }
     })
   }, [groups, matches])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
-
   function handleMatchSaved(updatedMatch) {
-    // Optimistically update local match list
     setMatches(prev => prev.map(m => m.id === updatedMatch.id ? updatedMatch : m))
     setScoreMatch(null)
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // Scoring rule for the currently open match (uses event config when available)
+  const scoringRules = event?.scoring_rules ?? null
 
-  if (loading) return <div className="flex justify-center py-24"><LoadingSpinner size="lg" text="Đang tải..." /></div>
-  if (error)   return <div className="max-w-2xl mx-auto px-4 py-24 text-center text-red-600">{error}</div>
+  // ── Navigation helpers ──────────────────────────────────────────────────────
+  const backHref = eventId
+    ? `/tournament/${id}/event/${eventId}/players`
+    : `/tournament/${id}/setup`
+
+  const backLabel = eventId ? '← Import VĐV' : '← Import VĐV'
+
+  function handleQualifyConfirmed() {
+    if (eventId) {
+      navigate(`/tournament/${id}/event/${eventId}/knockout`)
+    } else {
+      navigate(`/tournament/${id}/knockout`)
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    )
+  }
+  if (error) return <div className="max-w-2xl mx-auto px-4 py-24 text-center text-red-600">{error}</div>
   if (!tournament) return null
 
-  const hasGroups = groups.length > 0
-  const isGroupStage = tournament.status === 'group_stage'
+  // When in per-event mode, use event's status + config; otherwise use tournament's
+  const activeEntity = event ?? tournament
+  const statusBadgeVariant = event
+    ? (EVENT_STATUS_BADGE[event.status] || 'default')
+    : (STATUS_BADGE[tournament.status] || 'default')
+  const statusLabel = event
+    ? (EVENT_STATUS_LABELS[event.status] || event.status)
+    : (STATUS_LABELS[tournament.status] || tournament.status)
 
+  const hasGroups     = groups.length > 0
   const allGroupsDone = hasGroups && enrichedGroups.every(g => g.completed === g.total && g.total > 0)
+
+  const disciplineIcon  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
+  const disciplineLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-      {/* Back */}
-      <Link
-        to={`/tournament/${id}/setup`}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" /> Import VĐV
-      </Link>
+      {/* Breadcrumb (per-event) or simple back link (legacy) */}
+      {eventId ? (
+        <Breadcrumb
+          className="mb-6"
+          items={[
+            { label: 'Trang chủ', href: '/' },
+            { label: tournament.name, href: `/tournament/${id}` },
+            { label: disciplineLabel, href: `/tournament/${id}/event/${eventId}/setup` },
+            { label: 'Vòng bảng' },
+          ]}
+        />
+      ) : (
+        <Link to={backHref} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors">
+          <ArrowLeft className="w-4 h-4" /> {backLabel}
+        </Link>
+      )}
 
-      {/* Tournament header */}
+      {/* Header */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-            <Trophy className="w-6 h-6 text-blue-600" />
+          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0 text-2xl">
+            {disciplineIcon ?? <Trophy className="w-6 h-6 text-blue-600" />}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-gray-900 truncate">{tournament.name}</h1>
-              <Badge variant={STATUS_BADGE[tournament.status] || 'default'}>
-                {STATUS_LABELS[tournament.status]}
-              </Badge>
+              <h1 className="text-xl font-bold text-gray-900 truncate">
+                {disciplineLabel ? `${disciplineLabel} — Vòng bảng` : tournament.name}
+              </h1>
+              <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-              <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{players.length} VĐV</span>
-              <span className="flex items-center gap-1"><LayoutGrid className="w-3.5 h-3.5" />{tournament.num_groups} bảng</span>
+              <span className="flex items-center gap-1">
+                <Users className="w-3.5 h-3.5" />{players.length} VĐV
+              </span>
+              <span className="flex items-center gap-1">
+                <LayoutGrid className="w-3.5 h-3.5" />{activeEntity.num_groups ?? tournament.num_groups} bảng
+              </span>
               {hasGroups && (
                 <span className="text-blue-600 font-medium">
                   {enrichedGroups.reduce((s, g) => s + g.completed, 0)}/
@@ -169,11 +211,12 @@ export default function GroupStagePage() {
           {players.length === 0 ? (
             <div className="text-center py-12 text-gray-500 text-sm">
               Chưa có VĐV.{' '}
-              <Link to={`/tournament/${id}/setup`} className="text-blue-600 underline">Import VĐV trước</Link>
+              <Link to={backHref} className="text-blue-600 underline">Import VĐV trước</Link>
             </div>
           ) : (
             <GroupRandomizer
               tournament={tournament}
+              event={event}
               players={players}
               onConfirmed={fetchAll}
             />
@@ -184,16 +227,14 @@ export default function GroupStagePage() {
       {/* ── Phase B: Groups exist → Group Stage ── */}
       {hasGroups && (
         <div className="space-y-4">
-
           {/* Tab bar */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <div className="flex border-b border-gray-200 min-w-max">
                 {enrichedGroups.map((g, idx) => {
-                  const label = String.fromCharCode(65 + idx)
+                  const label  = String.fromCharCode(65 + idx)
                   const active = idx === selectedGroupIdx
-                  const done = g.completed === g.total && g.total > 0
-
+                  const done   = g.completed === g.total && g.total > 0
                   return (
                     <button
                       key={g.id}
@@ -205,9 +246,7 @@ export default function GroupStagePage() {
                       }`}
                     >
                       <span>Bảng {label}</span>
-                      <span className={`text-xs mt-0.5 ${
-                        done ? 'text-green-500' : active ? 'text-blue-400' : 'text-gray-400'
-                      }`}>
+                      <span className={`text-xs mt-0.5 ${done ? 'text-green-500' : active ? 'text-blue-400' : 'text-gray-400'}`}>
                         {done ? '✓ xong' : `${g.completed}/${g.total}`}
                       </span>
                     </button>
@@ -216,7 +255,6 @@ export default function GroupStagePage() {
               </div>
             </div>
 
-            {/* Selected group content */}
             {enrichedGroups[selectedGroupIdx] && (
               <GroupView
                 group={enrichedGroups[selectedGroupIdx]}
@@ -231,18 +269,20 @@ export default function GroupStagePage() {
           {allGroupsDone && (
             <QualifySection
               tournament={tournament}
-              onConfirmed={() => navigate(`/tournament/${id}/knockout`)}
+              event={event}
+              onConfirmed={handleQualifyConfirmed}
             />
           )}
         </div>
       )}
 
-      {/* Score modal */}
+      {/* Score modal — uses event scoring_rules when available */}
       {scoreMatch && (
         <ScoreModal
           match={scoreMatch}
           player1Name={playerMap[scoreMatch.player1_id]?.name ?? '?'}
           player2Name={playerMap[scoreMatch.player2_id]?.name ?? '?'}
+          scoringRules={scoringRules}
           onClose={() => setScoreMatch(null)}
           onSaved={handleMatchSaved}
         />
@@ -251,15 +291,14 @@ export default function GroupStagePage() {
   )
 }
 
-// ─── GroupView: matches + standings for one group ─────────────────────────────
+// ─── GroupView ────────────────────────────────────────────────────────────────
 
 function GroupView({ group, groupIdx, playerMap, onMatchClick }) {
   const label = String.fromCharCode(65 + groupIdx)
-  const done = group.completed === group.total && group.total > 0
+  const done  = group.completed === group.total && group.total > 0
 
   return (
     <div className="p-5">
-      {/* Group header */}
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="font-bold text-gray-900">Bảng {label}</h3>
@@ -269,30 +308,20 @@ function GroupView({ group, groupIdx, playerMap, onMatchClick }) {
           </p>
         </div>
         {!done && group.completed > 0 && (
-          <div className="text-right">
-            <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-500 rounded-full transition-all"
-                style={{ width: `${(group.completed / group.total) * 100}%` }}
-              />
-            </div>
+          <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all"
+              style={{ width: `${(group.completed / group.total) * 100}%` }}
+            />
           </div>
         )}
       </div>
 
-      {/* Two-column layout: Matches | Standings */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Matches */}
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Lịch thi đấu</p>
-          <MatchList
-            matches={group.matches}
-            playerMap={playerMap}
-            onMatchClick={onMatchClick}
-          />
+          <MatchList matches={group.matches} playerMap={playerMap} onMatchClick={onMatchClick} />
         </div>
-
-        {/* Standings */}
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Bảng xếp hạng</p>
           <div className="border border-gray-200 rounded-xl overflow-hidden">

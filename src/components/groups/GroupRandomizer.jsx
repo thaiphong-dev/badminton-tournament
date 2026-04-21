@@ -8,14 +8,16 @@ import Button from '@/components/ui/Button'
 import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 
 // Phase: idle → preview → saving → done
-export default function GroupRandomizer({ tournament, players, onConfirmed }) {
+export default function GroupRandomizer({ tournament, event, players, onConfirmed }) {
   const [phase, setPhase]       = useState('idle')  // 'idle' | 'preview' | 'saving'
   const [groups, setGroups]     = useState([])
   const [error, setError]       = useState(null)
   const [downloading, setDownloading] = useState(false)
   const gridRef = useRef(null)
 
-  const numGroups    = tournament.num_groups
+  // Use event config when available (per-event flow), fall back to tournament (legacy)
+  const numGroups    = (event ?? tournament).num_groups ?? tournament.num_groups
+  const eventId      = event?.id ?? null
   const clubColorMap = buildClubColorMap(players)
 
   async function handleDownload() {
@@ -52,7 +54,7 @@ export default function GroupRandomizer({ tournament, players, onConfirmed }) {
     setPhase('saving')
     setError(null)
     try {
-      await saveGroupsAndMatches(groups, tournament.id)
+      await saveGroupsAndMatches(groups, tournament.id, eventId)
       onConfirmed()
     } catch (err) {
       console.error(err)

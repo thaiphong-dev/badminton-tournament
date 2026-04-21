@@ -6,22 +6,29 @@ import { cn } from '@/lib/utils/cn'
 
 /**
  * Shows when all group-stage matches are done.
- * Loads the 16 qualified players, lets the user review, then confirms and navigates.
+ * Loads the qualified players, lets the user review, then confirms and navigates.
+ *
+ * Props:
+ *  tournament  – tournament row (always required for id)
+ *  event       – event row (optional; used in per-event flow for config + status update)
+ *  onConfirmed – callback after confirmation
  */
-export default function QualifySection({ tournament, onConfirmed }) {
+export default function QualifySection({ tournament, event, onConfirmed }) {
   const [phase, setPhase] = useState('idle')      // 'idle' | 'loading' | 'preview' | 'confirming'
   const [qualified, setQualified] = useState([])
   const [error, setError] = useState(null)
 
-  const numFirst  = tournament.num_first_place_qualify  ?? 12
-  const numSecond = tournament.num_second_place_qualify ?? 4
+  // Use event config when available, fall back to tournament config (legacy)
+  const numFirst  = (event ?? tournament).num_first_place_qualify  ?? 12
+  const numSecond = (event ?? tournament).num_second_place_qualify ?? 4
   const total     = numFirst + numSecond
+  const eventId   = event?.id ?? null
 
   async function handleLoad() {
     setPhase('loading')
     setError(null)
     try {
-      const players = await getQualifiedPlayers(tournament.id, numFirst, numSecond)
+      const players = await getQualifiedPlayers(tournament.id, numFirst, numSecond, eventId)
       setQualified(players.sort((a, b) => a.seed - b.seed))
       setPhase('preview')
     } catch (err) {
@@ -34,7 +41,7 @@ export default function QualifySection({ tournament, onConfirmed }) {
     setPhase('confirming')
     setError(null)
     try {
-      await confirmQualification(tournament.id)
+      await confirmQualification(tournament.id, eventId)
       onConfirmed()
     } catch (err) {
       setError(`Lỗi xác nhận: ${err.message}`)

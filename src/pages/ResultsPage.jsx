@@ -5,11 +5,12 @@ import {
   AlertCircle, Loader2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { STATUS_LABELS } from '@/lib/constants'
+import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { exportTournamentResults } from '@/lib/utils/exportResults'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
 
 const STAGE_ORDER  = ['round_of_16', 'quarter', 'semi', 'final', 'third_place']
@@ -28,36 +29,45 @@ const STATUS_BADGE = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ResultsPage() {
-  const { id } = useParams()
+  const { id, eventId } = useParams()
 
-  const [tournament, setTournament]         = useState(null)
-  const [players, setPlayers]               = useState([])
+  const [tournament, setTournament]           = useState(null)
+  const [event, setEvent]                     = useState(null)
+  const [players, setPlayers]                 = useState([])
   const [knockoutMatches, setKnockoutMatches] = useState([])
-  const [loading, setLoading]               = useState(true)
-  const [error, setError]                   = useState(null)
-  const [exporting, setExporting]           = useState(false)
+  const [loading, setLoading]                 = useState(true)
+  const [error, setError]                     = useState(null)
+  const [exporting, setExporting]             = useState(false)
 
-  useEffect(() => { fetchAll() }, [id])
+  useEffect(() => { fetchAll() }, [id, eventId])
 
   async function fetchAll() {
     setLoading(true)
     setError(null)
     try {
-      const [tRes, pRes, mRes] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('id', id).single(),
-        supabase.from('players').select('*').eq('tournament_id', id),
-        supabase
-          .from('matches')
-          .select('*')
-          .eq('tournament_id', id)
-          .neq('stage', 'group')
-          .order('match_number'),
-      ])
+      const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
       if (tRes.error) throw tRes.error
+      setTournament(tRes.data)
+
+      let ev = null
+      if (eventId) {
+        const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
+        if (eRes.error) throw eRes.error
+        ev = eRes.data
+        setEvent(ev)
+      }
+
+      const [pRes, mRes] = await Promise.all([
+        eventId
+          ? supabase.from('players').select('*').eq('event_id', eventId)
+          : supabase.from('players').select('*').eq('tournament_id', id),
+        eventId
+          ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number'),
+      ])
       if (pRes.error) throw pRes.error
       if (mRes.error) throw mRes.error
 
-      setTournament(tRes.data)
       setPlayers(pRes.data || [])
       setKnockoutMatches(mRes.data || [])
     } catch (err) {
@@ -100,7 +110,7 @@ export default function ResultsPage() {
   function handleExport() {
     setExporting(true)
     try {
-      exportTournamentResults(tournament, players, knockoutMatches, rankings)
+      exportTournamentResults(tournament, players, knockoutMatches, rankings, event ?? null)
     } catch (err) {
       console.error('Export error:', err)
     } finally {
@@ -128,33 +138,55 @@ export default function ResultsPage() {
 
   if (!tournament) return null
 
-  const isCompleted    = tournament.status === 'completed'
+  const disciplineIcon  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
+  const disciplineLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
+  const statusBadgeVar  = event
+    ? (EVENT_STATUS_BADGE[event.status] || 'default')
+    : (STATUS_BADGE[tournament.status] || 'default')
+  const statusLabel = event
+    ? (EVENT_STATUS_LABELS[event.status] || event.status)
+    : (STATUS_LABELS[tournament.status] || tournament.status)
+  const isCompleted    = (event?.status ?? tournament.status) === 'completed'
   const completedCount = knockoutMatches.filter(m => m.status === 'completed').length
+  const knockoutHref   = eventId
+    ? `/tournament/${id}/event/${eventId}/knockout`
+    : `/tournament/${id}/knockout`
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
 
-      {/* Back */}
-      <Link
-        to={`/tournament/${id}/knockout`}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" /> Vòng Knockout
-      </Link>
+      {/* Breadcrumb (per-event) or back link (legacy) */}
+      {eventId ? (
+        <Breadcrumb
+          items={[
+            { label: 'Trang chủ', href: '/' },
+            { label: tournament.name, href: `/tournament/${id}` },
+            { label: disciplineLabel, href: `/tournament/${id}/event/${eventId}/setup` },
+            { label: 'Kết quả' },
+          ]}
+        />
+      ) : (
+        <Link
+          to={knockoutHref}
+          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Vòng Knockout
+        </Link>
+      )}
 
-      {/* Tournament header */}
+      {/* Header */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-yellow-50 rounded-xl flex items-center justify-center shrink-0">
-              <Trophy className="w-6 h-6 text-yellow-600" />
+            <div className="w-12 h-12 bg-yellow-50 rounded-xl flex items-center justify-center shrink-0 text-2xl">
+              {disciplineIcon ?? <Trophy className="w-6 h-6 text-yellow-600" />}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold text-gray-900">{tournament.name}</h1>
-                <Badge variant={STATUS_BADGE[tournament.status] || 'default'}>
-                  {STATUS_LABELS[tournament.status]}
-                </Badge>
+                <h1 className="text-xl font-bold text-gray-900">
+                  {disciplineLabel ? `${disciplineLabel} — Kết quả` : tournament.name}
+                </h1>
+                <Badge variant={statusBadgeVar}>{statusLabel}</Badge>
               </div>
               <p className="text-sm text-gray-500 mt-0.5">
                 {players.length} VĐV · {completedCount}/{knockoutMatches.length} trận knockout
@@ -179,7 +211,7 @@ export default function ResultsPage() {
           <Trophy className="w-10 h-10 text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">Giải đấu chưa hoàn thành.</p>
           <Link
-            to={`/tournament/${id}/knockout`}
+            to={knockoutHref}
             className="text-blue-600 text-sm underline mt-2 inline-block"
           >
             Quay lại nhập kết quả →

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trophy, Users, ChevronRight, CheckCircle } from 'lucide-react'
+import { Trophy, Users, ChevronRight, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS } from '@/lib/constants'
 import Badge from '@/components/ui/Badge'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import Button from '@/components/ui/Button'
+import Breadcrumb from '@/components/layout/Breadcrumb'
 import PlayerImport from '@/components/tournament/PlayerImport'
 
 const STATUS_BADGE_VARIANT = {
@@ -78,10 +79,14 @@ export default function TournamentSetup() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-      {/* Back */}
-      <Link to="/" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors">
-        <ArrowLeft className="w-4 h-4" /> Danh sách giải đấu
-      </Link>
+      <Breadcrumb
+        className="mb-6"
+        items={[
+          { label: 'Trang chủ', href: '/' },
+          { label: tournament.name, href: `/tournament/${id}` },
+          { label: 'Import VĐV' },
+        ]}
+      />
 
       {/* Tournament header */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">

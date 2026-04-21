@@ -6,7 +6,7 @@ import {
   LayoutList, GitBranch, ChevronRight, ImageDown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { STATUS_LABELS } from '@/lib/constants'
+import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { saveKnockoutBracket } from '@/lib/utils/bracketGenerator'
 import { getQualifiedPlayers } from '@/lib/utils/qualifyPlayers'
 import { advanceWinner, repairBracketLinks } from '@/lib/utils/advanceWinner'
@@ -14,6 +14,7 @@ import Badge from '@/components/ui/Badge'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ScoreModal from '@/components/shared/ScoreModal'
 import BracketView from '@/components/knockout/BracketView'
+import Breadcrumb from '@/components/layout/Breadcrumb'
 import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 import { cn } from '@/lib/utils/cn'
 
@@ -31,9 +32,10 @@ const STATUS_BADGE = {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function KnockoutPage() {
-  const { id } = useParams()
+  const { id, eventId } = useParams()
 
   const [tournament, setTournament]   = useState(null)
+  const [event, setEvent]             = useState(null)
   const [players, setPlayers]         = useState([])
   const [matches, setMatches]         = useState([])
   const [loading, setLoading]         = useState(true)
@@ -56,73 +58,79 @@ export default function KnockoutPage() {
     }
   }
 
-  useEffect(() => { fetchAll() }, [id])
+  useEffect(() => { fetchAll() }, [id, eventId])
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
   async function fetchAll() {
     setLoading(true)
     setError(null)
     try {
-      const [tRes, pRes, mRes] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('id', id).single(),
-        supabase.from('players').select('*').eq('tournament_id', id),
-        supabase
-          .from('matches')
-          .select('*')
-          .eq('tournament_id', id)
-          .neq('stage', 'group')
-          .order('match_number'),
+      const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
+      if (tRes.error) throw tRes.error
+      setTournament(tRes.data)
+
+      // Fetch event when in per-event route
+      let ev = null
+      if (eventId) {
+        const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
+        if (eRes.error) throw eRes.error
+        ev = eRes.data
+        setEvent(ev)
+      }
+
+      const [pRes, mRes] = await Promise.all([
+        eventId
+          ? supabase.from('players').select('*').eq('event_id', eventId)
+          : supabase.from('players').select('*').eq('tournament_id', id),
+        eventId
+          ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number'),
       ])
 
-      if (tRes.error) throw tRes.error
       if (pRes.error) throw pRes.error
       if (mRes.error) throw mRes.error
 
-      setTournament(tRes.data)
       setPlayers(pRes.data || [])
 
       let knockoutMatches = mRes.data || []
 
       // ── Deduplicate: keep one match per (stage, match_number) ────────────────
-      // Prefers completed matches over pending; within same status keeps lower id.
-      // Cleans up brackets that were generated twice (e.g. React StrictMode).
-      const byKey = {}
-      knockoutMatches.forEach(m => {
-        const key = `${m.stage}:${m.match_number}`
-        const existing = byKey[key]
-        if (!existing) {
-          byKey[key] = m
-        } else {
-          const keepNew =
-            (m.status === 'completed' && existing.status !== 'completed') ||
-            (m.status === existing.status && m.id < existing.id)
-          byKey[key] = keepNew ? m : existing
-        }
-      })
-      const deduped       = Object.values(byKey)
-      const keptIds       = new Set(deduped.map(m => m.id))
-      const duplicateIds  = knockoutMatches.filter(m => !keptIds.has(m.id)).map(m => m.id)
+      const deduped      = deduplicateMatches(knockoutMatches)
+      const keptIds      = new Set(deduped.map(m => m.id))
+      const duplicateIds = knockoutMatches.filter(m => !keptIds.has(m.id)).map(m => m.id)
       if (duplicateIds.length > 0) {
         await supabase.from('matches').delete().in('id', duplicateIds)
         knockoutMatches = deduped
       }
 
       if (knockoutMatches.length === 0) {
-        // No bracket yet — generate it
-        await generateBracket(tRes.data, pRes.data || [])
+        await generateBracket(tRes.data, pRes.data || [], ev)
       } else {
-        // Repair: re-apply winner advancements for completed matches so QF/SF/Final
-        // slots are populated even if previous advanceWinner calls were missed.
-        await repairBracketLinks(knockoutMatches, id)
+        await repairBracketLinks(knockoutMatches, id, eventId ?? null)
 
-        // Re-fetch after repair so the UI shows updated player names
-        const { data: repaired } = await supabase
-          .from('matches')
-          .select('*')
-          .eq('tournament_id', id)
-          .neq('stage', 'group')
-          .order('match_number')
-        setMatches(repaired || knockoutMatches)
+        // Re-fetch after repair
+        const refetchQ = eventId
+          ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
+        const { data: repaired } = await refetchQ
+        const repairedMatches = repaired || knockoutMatches
+        setMatches(repairedMatches)
+
+        // Belt-and-suspenders: fix completion status if missed
+        const finalDone = repairedMatches.find(m => m.stage === 'final' && m.status === 'completed')
+        if (finalDone) {
+          if (eventId && ev?.status === 'knockout') {
+            const { data: fixedEv } = await supabase
+              .from('events').update({ status: 'completed' }).eq('id', eventId).select().single()
+            if (fixedEv) setEvent(fixedEv)
+          } else if (!eventId && tRes.data?.status === 'knockout') {
+            const { data: fixed } = await supabase
+              .from('tournaments')
+              .update({ status: 'completed', completed_at: new Date().toISOString() })
+              .eq('id', id).select().single()
+            if (fixed) setTournament(fixed)
+          }
+        }
       }
     } catch (err) {
       setError(err.message)
@@ -132,23 +140,42 @@ export default function KnockoutPage() {
   }
 
   // ── Generate bracket ────────────────────────────────────────────────────────
-  async function generateBracket(t, allPlayers) {
+  async function generateBracket(t, allPlayers, ev = null) {
     setGenerating(true)
     try {
-      const qualified = await getQualifiedPlayers(
-        t.id,
-        t.num_first_place_qualify  ?? 12,
-        t.num_second_place_qualify ?? 4,
-      )
+      const config = ev ?? t
+      const numFirst  = config.num_first_place_qualify  ?? 12
+      const numSecond = config.num_second_place_qualify ?? 4
+      const evId = ev?.id ?? null
+
+      const qualified = await getQualifiedPlayers(t.id, numFirst, numSecond, evId)
       if (qualified.length === 0) throw new Error('Chưa có VĐV đủ điều kiện. Hoàn thành vòng bảng trước.')
 
-      const saved = await saveKnockoutBracket(qualified, t.id)
+      const saved = await saveKnockoutBracket(qualified, t.id, evId)
       setMatches(saved)
     } catch (err) {
       setError(err.message)
     } finally {
       setGenerating(false)
     }
+  }
+
+  // ── Dedup helper: keep one match per (stage, match_number) ────────────────
+  function deduplicateMatches(matches) {
+    const byKey = {}
+    matches.forEach(m => {
+      const key = `${m.stage}:${m.match_number}`
+      const existing = byKey[key]
+      if (!existing) {
+        byKey[key] = m
+      } else {
+        const keepNew =
+          (m.status === 'completed' && existing.status !== 'completed') ||
+          (m.status === existing.status && m.id < existing.id)
+        byKey[key] = keepNew ? m : existing
+      }
+    })
+    return Object.values(byKey)
   }
 
   // ── Player lookup map ───────────────────────────────────────────────────────
@@ -159,33 +186,45 @@ export default function KnockoutPage() {
 
   // ── Score saved handler ─────────────────────────────────────────────────────
   async function handleScoreSaved(updatedMatch) {
-    // Advance winner (and loser for SF → 3rd place)
     try {
-      // Re-fetch the full match (includes next_match_id from DB)
-      const { data: full } = await supabase
-        .from('matches')
-        .select('*')
-        .eq('id', updatedMatch.id)
-        .single()
-
+      const { data: full } = await supabase.from('matches').select('*').eq('id', updatedMatch.id).single()
       if (full) await advanceWinner(full)
     } catch (err) {
       console.error('advanceWinner error:', err)
     }
 
-    // Reload all knockout matches to reflect advanced players
-    const { data: fresh } = await supabase
-      .from('matches')
-      .select('*')
-      .eq('tournament_id', id)
-      .neq('stage', 'group')
-      .order('match_number')
+    // Reload all knockout matches (deduplicated)
+    const freshQ = eventId
+      ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+      : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
+    const { data: freshRaw } = await freshQ
+    const fresh = freshRaw ? deduplicateMatches(freshRaw) : null
 
     if (fresh) {
       setMatches(fresh)
-      // Refresh tournament status (might have changed to 'completed')
+
+      const finalDone = fresh.find(m => m.stage === 'final' && m.status === 'completed')
+      if (finalDone) {
+        if (eventId) {
+          // Belt-and-suspenders for event status
+          const { data: updatedEv } = await supabase
+            .from('events').update({ status: 'completed' }).eq('id', eventId).eq('status', 'knockout').select().single()
+          if (updatedEv) setEvent(updatedEv)
+        } else {
+          await supabase
+            .from('tournaments')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', id).eq('status', 'knockout')
+        }
+      }
+
+      // Refresh tournament + event status
       const { data: t } = await supabase.from('tournaments').select('*').eq('id', id).single()
       if (t) setTournament(t)
+      if (eventId) {
+        const { data: ev } = await supabase.from('events').select('*').eq('id', eventId).single()
+        if (ev) setEvent(ev)
+      }
     }
 
     setScoreMatch(null)
@@ -219,12 +258,28 @@ export default function KnockoutPage() {
     )
   }
 
+  const disciplineIcon  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
+  const disciplineLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
+  const activeStatus    = event?.status ?? tournament?.status
+  const statusBadgeVar  = event
+    ? (EVENT_STATUS_BADGE[event.status] || 'default')
+    : (STATUS_BADGE[tournament?.status] || 'default')
+  const statusLabel = event
+    ? (EVENT_STATUS_LABELS[event.status] || event.status)
+    : (STATUS_LABELS[tournament?.status] || tournament?.status)
+  const resultsHref = eventId
+    ? `/tournament/${id}/event/${eventId}/results`
+    : `/tournament/${id}/results`
+
   if (error) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center">
         <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
         <p className="text-red-600 mb-4">{error}</p>
-        <Link to={`/tournament/${id}/groups`} className="text-blue-600 underline text-sm">
+        <Link
+          to={eventId ? `/tournament/${id}/event/${eventId}/groups` : `/tournament/${id}/groups`}
+          className="text-blue-600 underline text-sm"
+        >
           Quay lại vòng bảng
         </Link>
       </div>
@@ -234,26 +289,38 @@ export default function KnockoutPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-      {/* Back */}
-      <Link
-        to={`/tournament/${id}/groups`}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" /> Vòng bảng
-      </Link>
+      {/* Breadcrumb (per-event) or back link (legacy) */}
+      {eventId ? (
+        <Breadcrumb
+          className="mb-6"
+          items={[
+            { label: 'Trang chủ', href: '/' },
+            { label: tournament?.name, href: `/tournament/${id}` },
+            { label: disciplineLabel, href: `/tournament/${id}/event/${eventId}/setup` },
+            { label: 'Knockout' },
+          ]}
+        />
+      ) : (
+        <Link
+          to={`/tournament/${id}/groups`}
+          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Vòng bảng
+        </Link>
+      )}
 
-      {/* Tournament header */}
+      {/* Header */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center shrink-0">
-            <Swords className="w-6 h-6 text-purple-600" />
+          <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center shrink-0 text-2xl">
+            {disciplineIcon ?? <Swords className="w-6 h-6 text-purple-600" />}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-gray-900 truncate">{tournament?.name}</h1>
-              <Badge variant={STATUS_BADGE[tournament?.status] || 'default'}>
-                {STATUS_LABELS[tournament?.status] || tournament?.status}
-              </Badge>
+              <h1 className="text-xl font-bold text-gray-900 truncate">
+                {disciplineLabel ? `${disciplineLabel} — Knockout` : tournament?.name}
+              </h1>
+              <Badge variant={statusBadgeVar}>{statusLabel}</Badge>
             </div>
             <p className="text-sm text-gray-500 mt-1">Vòng Knockout · {matches.length} trận</p>
           </div>
@@ -271,7 +338,7 @@ export default function KnockoutPage() {
               <p className="text-yellow-100 text-sm">{champion.club}</p>
             </div>
             <Link
-              to={`/tournament/${id}/results`}
+              to={resultsHref}
               className="shrink-0 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               Xem kết quả <ChevronRight className="w-4 h-4" />
@@ -405,6 +472,7 @@ export default function KnockoutPage() {
           match={scoreMatch}
           player1Name={playerMap[scoreMatch.player1_id]?.name ?? 'TBD'}
           player2Name={playerMap[scoreMatch.player2_id]?.name ?? 'TBD'}
+          scoringRules={event?.scoring_rules ?? null}
           onClose={() => setScoreMatch(null)}
           onSaved={handleScoreSaved}
         />

@@ -10,7 +10,17 @@ import Button from '@/components/ui/Button'
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function PlayerImport({ tournamentId, existingPlayers = [], onImportComplete }) {
+/**
+ * Props:
+ *  tournamentId     – always required
+ *  eventId          – optional; when provided, players are scoped to this event
+ *  discipline       – optional; affects Excel column hints for doubles disciplines
+ *  existingPlayers  – pre-loaded players to seed the table
+ *  onImportComplete – callback(count) after save
+ */
+export default function PlayerImport({ tournamentId, eventId, discipline, existingPlayers = [], onImportComplete }) {
+  const isDoubles = ['mens_doubles', 'womens_doubles', 'mixed_doubles'].includes(discipline)
+
   // Seed state with existing DB players (marked _local=false so they won't be re-inserted)
   const [players, setPlayers] = useState(
     existingPlayers.map(p => ({ ...p, _local: false, _key: p.id }))
@@ -45,17 +55,38 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
         }
 
         const firstRow = json[0]
+
+        // Doubles: accept "VĐV 1" + "VĐV 2" columns (or fallback to "Tên")
+        const hasPartner1 = 'VĐV 1' in firstRow || 'VDV 1' in firstRow
+        const hasPartner2 = 'VĐV 2' in firstRow || 'VDV 2' in firstRow
         const hasName = 'Tên' in firstRow || 'Ten' in firstRow || 'Name' in firstRow
         const hasClub = 'CLB' in firstRow || 'Club' in firstRow
 
-        if (!hasName || !hasClub) {
-          setParseError('File thiếu cột bắt buộc. Cần có cột "Tên" (hoặc "Name") và "CLB" (hoặc "Club").')
+        const useDoublesColumns = isDoubles && hasPartner1 && hasPartner2
+
+        if (!useDoublesColumns && !hasName) {
+          setParseError(
+            isDoubles
+              ? 'File cần có cột "VĐV 1", "VĐV 2" và "CLB" cho nội dung đôi.'
+              : 'File thiếu cột bắt buộc. Cần có cột "Tên" (hoặc "Name") và "CLB" (hoặc "Club").'
+          )
+          return
+        }
+        if (!hasClub) {
+          setParseError('File thiếu cột "CLB" (hoặc "Club").')
           return
         }
 
         const parsed = json
           .map(row => {
-            const name = String(row['Tên'] || row['Ten'] || row['Name'] || '').trim()
+            let name
+            if (useDoublesColumns) {
+              const p1 = String(row['VĐV 1'] || row['VDV 1'] || '').trim()
+              const p2 = String(row['VĐV 2'] || row['VDV 2'] || '').trim()
+              name = p1 && p2 ? `${p1} / ${p2}` : (p1 || p2)
+            } else {
+              name = String(row['Tên'] || row['Ten'] || row['Name'] || '').trim()
+            }
             const club = String(row['CLB'] || row['Club'] || '').trim() || 'Tự do'
             return { name, club }
           })
@@ -155,9 +186,10 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
     try {
       const { error } = await supabase.from('players').insert(
         newOnes.map(p => ({
-          name: p.name.trim(),
-          club: p.club.trim(),
+          name:          p.name.trim(),
+          club:          p.club.trim(),
           tournament_id: tournamentId,
+          ...(eventId ? { event_id: eventId } : {}),
         }))
       )
       if (error) throw error
@@ -179,19 +211,31 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
 
   // ── Sample file download ───────────────────────────────────────────────────
   function downloadSample() {
-    const data = [
-      ['Tên', 'CLB'],
-      ['Nguyễn Văn An', 'CLB Thành Công'],
-      ['Trần Thị Bình', 'CLB Sao Việt'],
-      ['Lê Văn Cường', 'CLB Tiến Phát'],
-      ['Phạm Thị Dung', 'CLB Thể Thao'],
-      ['Hoàng Văn Em', 'CLB Sao Việt'],
-    ]
+    let data, filename
+    if (isDoubles) {
+      data = [
+        ['VĐV 1', 'VĐV 2', 'CLB'],
+        ['Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
+        ['Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt'],
+        ['Hoàng Văn Em', 'Vũ Văn Phúc', 'CLB Tiến Phát'],
+      ]
+      filename = 'mau_danh_sach_doi.xlsx'
+    } else {
+      data = [
+        ['Tên', 'CLB'],
+        ['Nguyễn Văn An', 'CLB Thành Công'],
+        ['Trần Thị Bình', 'CLB Sao Việt'],
+        ['Lê Văn Cường', 'CLB Tiến Phát'],
+        ['Phạm Thị Dung', 'CLB Thể Thao'],
+        ['Hoàng Văn Em', 'CLB Sao Việt'],
+      ]
+      filename = 'mau_danh_sach_vdv.xlsx'
+    }
     const ws = XLSX.utils.aoa_to_sheet(data)
-    ws['!cols'] = [{ wch: 25 }, { wch: 20 }]
+    ws['!cols'] = isDoubles ? [{ wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 25 }, { wch: 20 }]
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Danh sách VĐV')
-    XLSX.writeFile(wb, 'mau_danh_sach_vdv.xlsx')
+    XLSX.utils.book_append_sheet(wb, ws, isDoubles ? 'Danh sách đôi' : 'Danh sách VĐV')
+    XLSX.writeFile(wb, filename)
   }
 
   const newCount = players.filter(p => p._local).length
@@ -215,8 +259,19 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
         </p>
         <p className="text-xs text-gray-400 mt-1">hoặc click để chọn file · Hỗ trợ .xlsx .xls .csv</p>
         <p className="text-xs text-gray-400 mt-2">
-          Cột bắt buộc: <span className="font-mono bg-gray-100 px-1 rounded">Tên</span> và{' '}
-          <span className="font-mono bg-gray-100 px-1 rounded">CLB</span>
+          {isDoubles ? (
+            <>
+              Cột bắt buộc:{' '}
+              <span className="font-mono bg-gray-100 px-1 rounded">VĐV 1</span>{' '}
+              <span className="font-mono bg-gray-100 px-1 rounded">VĐV 2</span>{' '}
+              <span className="font-mono bg-gray-100 px-1 rounded">CLB</span>
+            </>
+          ) : (
+            <>
+              Cột bắt buộc: <span className="font-mono bg-gray-100 px-1 rounded">Tên</span> và{' '}
+              <span className="font-mono bg-gray-100 px-1 rounded">CLB</span>
+            </>
+          )}
         </p>
       </div>
 
@@ -258,7 +313,9 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 w-10">#</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Tên VĐV</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                    {isDoubles ? 'Tên đôi (VĐV1 / VĐV2)' : 'Tên VĐV'}
+                  </th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Câu lạc bộ</th>
                   <th className="px-4 py-2.5 w-12"></th>
                 </tr>
@@ -285,7 +342,7 @@ export default function PlayerImport({ tournamentId, existingPlayers = [], onImp
         <div className="flex gap-2 items-start">
           <div className="flex-1">
             <input
-              placeholder="Tên VĐV"
+              placeholder={isDoubles ? 'VĐV1 / VĐV2' : 'Tên VĐV'}
               value={newName}
               onChange={e => { setNewName(e.target.value); setAddErrors(p => ({ ...p, name: null })) }}
               onKeyDown={e => e.key === 'Enter' && addPlayer()}

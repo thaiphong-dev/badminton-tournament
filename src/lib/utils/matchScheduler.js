@@ -41,14 +41,31 @@ export function generateRoundRobinMatches(players) {
  *
  * @param {Array}  localGroups  - Array of player arrays from randomizeGroups()
  * @param {string} tournamentId
+ * @param {string} [eventId]    - Optional: scope to this event (multi-discipline flow)
  * @returns {Array} savedGroups - Inserted group rows from DB
  */
-export async function saveGroupsAndMatches(localGroups, tournamentId) {
+export async function saveGroupsAndMatches(localGroups, tournamentId, eventId) {
+  // ── 0. Idempotency guard ────────────────────────────────────────────────────
+  // If groups already exist (e.g. React StrictMode double-call or retry),
+  // return the existing ones rather than duplicating.
+  {
+    let checkQ = supabase.from('groups').select('id, group_number').order('group_number')
+    checkQ = eventId ? checkQ.eq('event_id', eventId) : checkQ.eq('tournament_id', tournamentId)
+    const { data: existing } = await checkQ
+    if (existing && existing.length > 0) {
+      let fetchQ = supabase.from('groups').select('*').order('group_number')
+      fetchQ = eventId ? fetchQ.eq('event_id', eventId) : fetchQ.eq('tournament_id', tournamentId)
+      const { data: saved } = await fetchQ
+      return saved || existing
+    }
+  }
+
   // ── 1. Insert groups ────────────────────────────────────────────────────────
   const groupsToInsert = localGroups.map((_, idx) => ({
     tournament_id: tournamentId,
     group_number: idx + 1,
     name: `Bảng ${String.fromCharCode(65 + idx)}`, // A, B, C …
+    ...(eventId ? { event_id: eventId } : {}),
   }))
 
   const { data: savedGroups, error: groupErr } = await supabase
@@ -89,19 +106,28 @@ export async function saveGroupsAndMatches(localGroups, tournamentId) {
       status: 'pending',
       player1_scores: [],
       player2_scores: [],
+      ...(eventId ? { event_id: eventId } : {}),
     }))
   })
 
   const { error: matchErr } = await supabase.from('matches').insert(matchesToInsert)
   if (matchErr) throw matchErr
 
-  // ── 4. Update tournament status to group_stage ──────────────────────────────
-  const { error: tErr } = await supabase
-    .from('tournaments')
-    .update({ status: 'group_stage' })
-    .eq('id', tournamentId)
-
-  if (tErr) throw tErr
+  // ── 4. Update status to group_stage ─────────────────────────────────────────
+  // Per-event flow: update event status; legacy flow: update tournament status.
+  if (eventId) {
+    const { error: eErr } = await supabase
+      .from('events')
+      .update({ status: 'group_stage' })
+      .eq('id', eventId)
+    if (eErr) throw eErr
+  } else {
+    const { error: tErr } = await supabase
+      .from('tournaments')
+      .update({ status: 'group_stage' })
+      .eq('id', tournamentId)
+    if (tErr) throw tErr
+  }
 
   return savedGroups
 }

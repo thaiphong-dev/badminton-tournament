@@ -1,71 +1,164 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Trophy } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Trophy, Check, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { DEFAULT_TOURNAMENT_CONFIG } from '@/lib/constants'
+import { DISCIPLINE_LIST, DEFAULT_EVENT_SCORING_RULES } from '@/lib/constants'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
-import { Card, CardHeader, CardBody, CardFooter } from '@/components/ui/Card'
+import { cn } from '@/lib/utils/cn'
 
+// ── Step indicator ────────────────────────────────────────────────────────────
+function StepIndicator({ current }) {
+  const steps = ['Thông tin giải đấu', 'Nội dung thi đấu']
+  return (
+    <div className="flex items-center gap-2 mb-8">
+      {steps.map((label, idx) => {
+        const step  = idx + 1
+        const done  = step < current
+        const active = step === current
+        return (
+          <div key={step} className="flex items-center gap-2">
+            {idx > 0 && <div className={cn('h-px w-8 sm:w-16 shrink-0', done ? 'bg-blue-500' : 'bg-gray-200')} />}
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors',
+                done   && 'bg-blue-500 text-white',
+                active && 'bg-blue-600 text-white ring-4 ring-blue-100',
+                !done && !active && 'bg-gray-100 text-gray-400',
+              )}>
+                {done ? <Check className="w-3.5 h-3.5" /> : step}
+              </div>
+              <span className={cn(
+                'text-sm hidden sm:block',
+                active ? 'font-semibold text-gray-900' : 'text-gray-400',
+              )}>
+                {label}
+              </span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Discipline card (selectable) ──────────────────────────────────────────────
+function DisciplineCard({ discipline, selected, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(discipline.value)}
+      className={cn(
+        'relative w-full text-left p-4 rounded-xl border-2 transition-all focus:outline-none',
+        selected
+          ? 'border-blue-500 bg-blue-50'
+          : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50',
+      )}
+    >
+      {/* Checkmark badge */}
+      {selected && (
+        <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+          <Check className="w-3 h-3 text-white" />
+        </span>
+      )}
+
+      <span className="text-2xl mb-2 block leading-none">{discipline.icon}</span>
+      <span className={cn(
+        'text-sm font-semibold block',
+        selected ? 'text-blue-700' : 'text-gray-700',
+      )}>
+        {discipline.label}
+      </span>
+    </button>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function TournamentCreate() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({
-    name: '',
-    num_groups: DEFAULT_TOURNAMENT_CONFIG.num_groups,
-    num_first_place_qualify: DEFAULT_TOURNAMENT_CONFIG.num_first_place_qualify,
-    num_second_place_qualify: DEFAULT_TOURNAMENT_CONFIG.num_second_place_qualify,
-  })
-  const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState(1)
+
+  // Step 1 fields
+  const [name, setName]         = useState('')
+  const [location, setLocation] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate]   = useState('')
+  const [nameError, setNameError] = useState(null)
+
+  // Step 2 fields
+  const [selected, setSelected] = useState(['mens_singles'])  // at least 1 pre-selected
+  const [selectError, setSelectError] = useState(null)
+
+  const [loading, setLoading]     = useState(false)
   const [submitError, setSubmitError] = useState(null)
 
-  function validate() {
-    const errs = {}
-    if (!form.name.trim()) errs.name = 'Tên giải đấu là bắt buộc'
-    if (form.num_groups < 1) errs.num_groups = 'Số bảng phải >= 1'
-    if (form.num_first_place_qualify < 1) errs.num_first_place_qualify = 'Phải >= 1'
-    if (form.num_second_place_qualify < 0) errs.num_second_place_qualify = 'Phải >= 0'
-    return errs
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    const errs = validate()
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs)
+  // ── Step 1 → Step 2 ────────────────────────────────────────────────────────
+  function handleNext() {
+    if (!name.trim()) {
+      setNameError('Tên giải đấu là bắt buộc')
       return
     }
+    setNameError(null)
+    setStep(2)
+  }
 
+  // ── Discipline toggle ──────────────────────────────────────────────────────
+  function toggleDiscipline(value) {
+    setSelected(prev =>
+      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+    )
+    setSelectError(null)
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  async function handleSubmit() {
+    if (selected.length === 0) {
+      setSelectError('Vui lòng chọn ít nhất 1 nội dung thi đấu')
+      return
+    }
     setLoading(true)
     setSubmitError(null)
-
     try {
-      const { data, error } = await supabase
+      // 1. Create tournament
+      const { data: tournament, error: tErr } = await supabase
         .from('tournaments')
         .insert({
-          name: form.name.trim(),
-          status: 'setup',
-          num_groups: Number(form.num_groups),
-          num_first_place_qualify: Number(form.num_first_place_qualify),
-          num_second_place_qualify: Number(form.num_second_place_qualify),
-          scoring_rules: DEFAULT_TOURNAMENT_CONFIG.scoring_rules,
+          name:     name.trim(),
+          status:   'setup',
+          location: location.trim() || null,
+          start_date: startDate || null,
+          end_date:   endDate   || null,
         })
         .select()
         .single()
+      if (tErr) throw tErr
 
-      if (error) throw error
-      navigate(`/tournament/${data.id}/setup`)
+      // 2. Create one event per selected discipline (in display order)
+      const eventsToInsert = DISCIPLINE_LIST
+        .filter(d => selected.includes(d.value))
+        .map((d, idx) => ({
+          tournament_id:             tournament.id,
+          discipline:                d.value,
+          name:                      d.label,
+          status:                    'setup',
+          format:                    'group_then_knockout',
+          num_groups:                4,
+          num_first_place_qualify:   4,
+          num_second_place_qualify:  0,
+          scoring_rules:             DEFAULT_EVENT_SCORING_RULES,
+          sort_order:                idx,
+        }))
+
+      const { error: eErr } = await supabase.from('events').insert(eventsToInsert)
+      if (eErr) throw eErr
+
+      navigate(`/tournament/${tournament.id}`)
     } catch (err) {
-      console.error('Error creating tournament:', err)
-      setSubmitError('Không thể tạo giải đấu. Vui lòng thử lại.')
+      console.error(err)
+      setSubmitError(`Không thể tạo giải đấu: ${err.message}`)
     } finally {
       setLoading(false)
     }
-  }
-
-  function handleChange(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }))
-    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }))
   }
 
   return (
@@ -75,89 +168,123 @@ export default function TournamentCreate() {
         <ArrowLeft className="w-4 h-4" /> Quay lại
       </Link>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-blue-600" />
+      {/* Card */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-sm">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+            <Trophy className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Tạo giải đấu mới</h1>
+            <p className="text-sm text-gray-500">Bước {step}/2</p>
+          </div>
+        </div>
+
+        <StepIndicator current={step} />
+
+        {/* ── STEP 1: Basic info ── */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <Input
+              label="Tên giải đấu *"
+              placeholder="VD: Giải Cầu Lông Mùa Hè 2026"
+              value={name}
+              onChange={e => { setName(e.target.value); setNameError(null) }}
+              error={nameError}
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleNext()}
+            />
+
+            <Input
+              label="Địa điểm tổ chức"
+              placeholder="VD: Nhà thi đấu quận 1, TP.HCM"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Ngày bắt đầu"
+                type="date"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
+              <Input
+                label="Ngày kết thúc"
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+              />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">Tạo giải đấu mới</h1>
-              <p className="text-sm text-gray-500">Điền thông tin để bắt đầu</p>
+
+            <div className="pt-2 flex justify-end">
+              <Button onClick={handleNext}>
+                Tiếp theo
+                <ArrowRight className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-        </CardHeader>
+        )}
 
-        <form onSubmit={handleSubmit}>
-          <CardBody className="space-y-5">
+        {/* ── STEP 2: Disciplines ── */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 mb-1">
+                Chọn nội dung thi đấu *
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">
+                Có thể chọn nhiều nội dung. Mỗi nội dung sẽ được cấu hình riêng ở bước tiếp theo.
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {DISCIPLINE_LIST.map(d => (
+                  <DisciplineCard
+                    key={d.value}
+                    discipline={d}
+                    selected={selected.includes(d.value)}
+                    onToggle={toggleDiscipline}
+                  />
+                ))}
+              </div>
+
+              {selectError && (
+                <div className="flex items-center gap-2 mt-3 text-sm text-red-600">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {selectError}
+                </div>
+              )}
+            </div>
+
+            {/* Summary chip */}
+            {selected.length > 0 && (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-700">
+                Đã chọn <strong>{selected.length}</strong> nội dung:{' '}
+                {DISCIPLINE_LIST.filter(d => selected.includes(d.value)).map(d => d.label).join(' · ')}
+              </div>
+            )}
+
             {submitError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
                 {submitError}
               </div>
             )}
 
-            <Input
-              label="Tên giải đấu *"
-              placeholder="VD: Giải Cầu Lông Mùa Hè 2026"
-              value={form.name}
-              onChange={e => handleChange('name', e.target.value)}
-              error={errors.name}
-              autoFocus
-            />
-
-            <div className="border-t border-gray-100 pt-5">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Cấu hình giải đấu</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <Input
-                  label="Số bảng"
-                  type="number"
-                  min="1"
-                  max="24"
-                  value={form.num_groups}
-                  onChange={e => handleChange('num_groups', e.target.value)}
-                  error={errors.num_groups}
-                />
-                <Input
-                  label="Nhất bảng lấy"
-                  type="number"
-                  min="1"
-                  value={form.num_first_place_qualify}
-                  onChange={e => handleChange('num_first_place_qualify', e.target.value)}
-                  error={errors.num_first_place_qualify}
-                />
-                <Input
-                  label="Nhì bảng lấy"
-                  type="number"
-                  min="0"
-                  value={form.num_second_place_qualify}
-                  onChange={e => handleChange('num_second_place_qualify', e.target.value)}
-                  error={errors.num_second_place_qualify}
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                Tổng vào knockout: {Number(form.num_first_place_qualify) + Number(form.num_second_place_qualify)} VĐV
-              </p>
+            <div className="pt-2 flex items-center justify-between">
+              <Button variant="secondary" onClick={() => setStep(1)}>
+                <ArrowLeft className="w-4 h-4" />
+                Quay lại
+              </Button>
+              <Button onClick={handleSubmit} loading={loading}>
+                <Trophy className="w-4 h-4" />
+                Tạo giải đấu
+              </Button>
             </div>
-
-            <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-700">
-              <strong>Luật thi đấu mặc định:</strong>
-              <ul className="mt-1 list-disc list-inside space-y-0.5 text-blue-600">
-                <li>Vòng bảng & 1/16, 1/8, 1/4: 1 set × 21 điểm</li>
-                <li>Bán kết & Chung kết: 3 set × 15 điểm</li>
-              </ul>
-            </div>
-          </CardBody>
-
-          <CardFooter className="flex justify-end gap-3">
-            <Link to="/">
-              <Button variant="secondary" type="button">Hủy</Button>
-            </Link>
-            <Button type="submit" loading={loading}>
-              Tạo giải đấu
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

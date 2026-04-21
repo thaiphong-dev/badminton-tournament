@@ -11,11 +11,12 @@ import { supabase } from '@/lib/supabase'
  * @param {string} tournamentId
  * @param {number} numFirst   - default 12
  * @param {number} numSecond  - default 4
+ * @param {string} [eventId]  - optional: scope to this event
  * @returns {Array} qualified players sorted by seed
  */
-export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond = 4) {
-  // Fetch groups with their group_players standings
-  const { data: groups, error } = await supabase
+export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond = 4, eventId) {
+  // Build group query — scope by event when available
+  let query = supabase
     .from('groups')
     .select(`
       id,
@@ -31,9 +32,15 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
         players ( id, name, club )
       )
     `)
-    .eq('tournament_id', tournamentId)
     .order('group_number')
 
+  if (eventId) {
+    query = query.eq('event_id', eventId)
+  } else {
+    query = query.eq('tournament_id', tournamentId)
+  }
+
+  const { data: groups, error } = await query
   if (error) throw error
 
   // Flatten: one record per group-player pair
@@ -79,14 +86,25 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
 }
 
 /**
- * Confirm qualification: update tournament status to 'knockout'.
+ * Confirm qualification: update status to 'knockout'.
+ * Per-event flow: updates events table.
+ * Legacy flow: updates tournaments table.
+ *
  * @param {string} tournamentId
+ * @param {string} [eventId]
  */
-export async function confirmQualification(tournamentId) {
-  const { error } = await supabase
-    .from('tournaments')
-    .update({ status: 'knockout' })
-    .eq('id', tournamentId)
-
-  if (error) throw error
+export async function confirmQualification(tournamentId, eventId) {
+  if (eventId) {
+    const { error } = await supabase
+      .from('events')
+      .update({ status: 'knockout' })
+      .eq('id', eventId)
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ status: 'knockout' })
+      .eq('id', tournamentId)
+    if (error) throw error
+  }
 }

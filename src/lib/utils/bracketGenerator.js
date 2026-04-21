@@ -21,7 +21,7 @@ const R16_PAIRINGS = [
 /**
  * Build bracket match rows (no IDs yet — used before DB insert).
  */
-export function buildBracketRows(qualifiedPlayers, tournamentId) {
+export function buildBracketRows(qualifiedPlayers, tournamentId, eventId = null) {
   const seeded = [...qualifiedPlayers].sort((a, b) => a.seed - b.seed)
 
   const base = (stage, matchNum, p1 = null, p2 = null) => ({
@@ -33,6 +33,7 @@ export function buildBracketRows(qualifiedPlayers, tournamentId) {
     player1_scores: [],
     player2_scores: [],
     status: 'pending',
+    ...(eventId ? { event_id: eventId } : {}),
   })
 
   const round16 = R16_PAIRINGS.map(([i1, i2], n) =>
@@ -46,6 +47,10 @@ export function buildBracketRows(qualifiedPlayers, tournamentId) {
   return { round16, quarters, semis, final, thirdPlace }
 }
 
+// ── In-flight deduplication: prevents concurrent calls from double-inserting ──
+// (React Strict Mode fires useEffect twice; both can race the idempotency check)
+const _inFlight = new Map()
+
 /**
  * Save the full knockout bracket to Supabase in two steps:
  *  1. Insert all 16 matches → get IDs
@@ -53,21 +58,31 @@ export function buildBracketRows(qualifiedPlayers, tournamentId) {
  *
  * @param {Array}  qualifiedPlayers  - from getQualifiedPlayers()
  * @param {string} tournamentId
+ * @param {string} [eventId]        - Optional: scope to this event
  * @returns {Array} All saved match rows (with IDs)
  */
-export async function saveKnockoutBracket(qualifiedPlayers, tournamentId) {
-  // ── Idempotency guard: return existing bracket if already generated ────────
-  const { data: existing, error: existErr } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('tournament_id', tournamentId)
-    .neq('stage', 'group')
-    .order('match_number')
+export function saveKnockoutBracket(qualifiedPlayers, tournamentId, eventId = null) {
+  const key = eventId ?? `t:${tournamentId}`
+  if (_inFlight.has(key)) return _inFlight.get(key)
 
+  const p = _saveKnockoutBracketInner(qualifiedPlayers, tournamentId, eventId)
+    .finally(() => _inFlight.delete(key))
+  _inFlight.set(key, p)
+  return p
+}
+
+async function _saveKnockoutBracketInner(qualifiedPlayers, tournamentId, eventId) {
+  // ── Idempotency guard: return existing bracket if already generated ────────
+  let idempQ = supabase.from('matches').select('*').neq('stage', 'group').order('match_number')
+  idempQ = eventId
+    ? idempQ.eq('event_id', eventId)
+    : idempQ.eq('tournament_id', tournamentId)
+
+  const { data: existing, error: existErr } = await idempQ
   if (existErr) throw existErr
   if (existing && existing.length > 0) return existing
 
-  const { round16, quarters, semis, final, thirdPlace } = buildBracketRows(qualifiedPlayers, tournamentId)
+  const { round16, quarters, semis, final, thirdPlace } = buildBracketRows(qualifiedPlayers, tournamentId, eventId)
 
   // ── Step 1: Insert all matches ────────────────────────────────────────────
   const allRows = [...round16, ...quarters, ...semis, final, thirdPlace]
