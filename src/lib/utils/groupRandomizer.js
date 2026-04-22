@@ -1,7 +1,6 @@
 /**
  * Check if a group has no duplicate clubs.
- * "Tự do" players are excluded from conflict checks
- * (multiple "Tự do" players may be in the same group).
+ * "Tự do" players are excluded from conflict checks.
  */
 function isGroupValid(group) {
   const clubs = group.map(p => p.club).filter(c => c !== 'Tự do')
@@ -9,94 +8,98 @@ function isGroupValid(group) {
 }
 
 /**
- * Randomize players into groups with club constraint
- * @param {Array} players - Array of player objects {id, name, club}
- * @param {number} numGroups - Number of groups (default: 12)
- * @returns {Array} Array of groups, each containing player objects
+ * Find the first player in a group whose club appears more than once.
+ * Returns null if the group is valid.
  */
-export function randomizeGroups(players, numGroups = 12) {
-  // Step 1: Shuffle players randomly
-  const shuffled = [...players].sort(() => Math.random() - 0.5)
+function findDuplicatePlayer(group) {
+  const seen = new Set()
+  for (const p of group) {
+    if (p.club === 'Tự do') continue
+    if (seen.has(p.club)) {
+      // Return this player (second occurrence = the one to move out)
+      return p
+    }
+    seen.add(p.club)
+  }
+  return null
+}
 
-  // Step 2: Initialize empty groups
-  const groups = Array.from({ length: numGroups }, () => [])
+/**
+ * Try to resolve all club conflicts in `groups` by swapping players.
+ * Tries ALL duplicate players (not just the first) before giving up.
+ * Returns true if fully resolved, false if stuck.
+ */
+function resolveConflicts(groups) {
+  const MAX_PASSES = groups.length * groups.length * 4
 
-  // Step 3: Distribute players round-robin
-  shuffled.forEach((player, index) => {
-    const groupIndex = index % numGroups
-    groups[groupIndex].push(player)
-  })
-
-  // Step 4: Fix club conflicts
-  let maxIterations = 100
-  let iteration = 0
-
-  while (iteration < maxIterations) {
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
     let hasConflict = false
 
     for (let i = 0; i < groups.length; i++) {
-      const group = groups[i]
-      // "Tự do" players never conflict with each other
-      const clubs = group.map(p => p.club).filter(c => c !== 'Tự do')
-      const uniqueClubs = new Set(clubs)
+      const duplicate = findDuplicatePlayer(groups[i])
+      if (!duplicate) continue
 
-      if (clubs.length !== uniqueClubs.size) {
-        hasConflict = true
+      hasConflict = true
+      const playerIndex = groups[i].indexOf(duplicate)
+      let swapped = false
 
-        const clubCounts = {}
-        clubs.forEach(club => {
-          clubCounts[club] = (clubCounts[club] || 0) + 1
-        })
+      outer: for (let j = 0; j < groups.length; j++) {
+        if (i === j) continue
+        for (let k = 0; k < groups[j].length; k++) {
+          const candidate = groups[j][k]
 
-        const duplicateClub = Object.keys(clubCounts).find(
-          club => clubCounts[club] > 1
-        )
+          const temp1 = [...groups[i]]
+          temp1[playerIndex] = candidate
+          const temp2 = [...groups[j]]
+          temp2[k] = duplicate
 
-        const playerToSwap = group.find(p => p.club === duplicateClub)
-        const playerIndex = group.indexOf(playerToSwap)
-
-        let swapped = false
-        for (let j = 0; j < groups.length; j++) {
-          if (i === j) continue
-
-          const otherGroup = groups[j]
-
-          for (let k = 0; k < otherGroup.length; k++) {
-            const candidatePlayer = otherGroup[k]
-
-            const tempGroup1 = [...group]
-            tempGroup1[playerIndex] = candidatePlayer
-
-            const tempGroup2 = [...otherGroup]
-            tempGroup2[k] = playerToSwap
-
-            const valid1 = isGroupValid(tempGroup1)
-            const valid2 = isGroupValid(tempGroup2)
-
-            if (valid1 && valid2) {
-              groups[i][playerIndex] = candidatePlayer
-              groups[j][k] = playerToSwap
-              swapped = true
-              break
-            }
+          if (isGroupValid(temp1) && isGroupValid(temp2)) {
+            groups[i][playerIndex] = candidate
+            groups[j][k] = duplicate
+            swapped = true
+            break outer
           }
-
-          if (swapped) break
-        }
-
-        if (!swapped) {
-          console.warn('Could not resolve club conflict in group', i)
         }
       }
+
+      // This conflict can't be resolved with any single swap — tell caller to retry
+      if (!swapped) return false
     }
 
-    if (!hasConflict) break
-    iteration++
+    if (!hasConflict) return true
   }
 
-  if (iteration >= maxIterations) {
-    console.error('Failed to resolve all club conflicts after', maxIterations, 'iterations')
+  return false
+}
+
+/**
+ * Randomize players into groups ensuring no two players from the same club
+ * are placed in the same group ("Tự do" players are exempt).
+ *
+ * Retries with a fresh shuffle up to MAX_ATTEMPTS times if conflicts can't
+ * be resolved, so it handles tricky club distributions robustly.
+ *
+ * @param {Array}  players   - Array of player objects {id, name, club}
+ * @param {number} numGroups - Number of groups
+ * @returns {Array} Array of groups (each group = array of player objects)
+ */
+export function randomizeGroups(players, numGroups = 12) {
+  const MAX_ATTEMPTS = 50
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // Fresh random shuffle each attempt
+    const shuffled = [...players].sort(() => Math.random() - 0.5)
+    const groups   = Array.from({ length: numGroups }, () => [])
+    shuffled.forEach((player, idx) => groups[idx % numGroups].push(player))
+
+    if (resolveConflicts(groups)) return groups
   }
 
+  // Last resort: return best-effort result (rare — only when mathematically impossible,
+  // e.g. more players from one club than there are groups)
+  const shuffled = [...players].sort(() => Math.random() - 0.5)
+  const groups   = Array.from({ length: numGroups }, () => [])
+  shuffled.forEach((player, idx) => groups[idx % numGroups].push(player))
+  resolveConflicts(groups)
   return groups
 }

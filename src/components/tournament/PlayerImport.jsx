@@ -12,25 +12,33 @@ import Button from '@/components/ui/Button'
 
 /**
  * Props:
- *  tournamentId     – always required
- *  eventId          – optional; when provided, players are scoped to this event
- *  discipline       – optional; affects Excel column hints for doubles disciplines
- *  existingPlayers  – pre-loaded players to seed the table
- *  onImportComplete – callback(count) after save
+ *  tournamentId      – always required
+ *  eventId           – optional; scopes players to this event
+ *  discipline        – affects Excel column hints for doubles disciplines
+ *  existingPlayers   – pre-loaded players to seed the table
+ *  requirePlayerCode – when true, "Mã số" column is required (professional mode)
+ *  onImportComplete  – callback(count) after save
  */
-export default function PlayerImport({ tournamentId, eventId, discipline, existingPlayers = [], onImportComplete }) {
+export default function PlayerImport({
+  tournamentId,
+  eventId,
+  discipline,
+  existingPlayers = [],
+  requirePlayerCode = false,
+  onImportComplete,
+}) {
   const isDoubles = ['mens_doubles', 'womens_doubles', 'mixed_doubles'].includes(discipline)
 
-  // Seed state with existing DB players (marked _local=false so they won't be re-inserted)
   const [players, setPlayers] = useState(
     existingPlayers.map(p => ({ ...p, _local: false, _key: p.id }))
   )
-  const [newName, setNewName] = useState('')
-  const [newClub, setNewClub] = useState('')
-  const [addErrors, setAddErrors] = useState({})
-  const [globalError, setGlobalError] = useState(null)
-  const [parseError, setParseError] = useState(null)
-  const [importing, setImporting] = useState(false)
+  const [newName, setNewName]           = useState('')
+  const [newClub, setNewClub]           = useState('')
+  const [newCode, setNewCode]           = useState('')
+  const [addErrors, setAddErrors]       = useState({})
+  const [globalError, setGlobalError]   = useState(null)
+  const [parseError, setParseError]     = useState(null)
+  const [importing, setImporting]       = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
 
   // ── File parsing ────────────────────────────────────────────────────────────
@@ -44,23 +52,27 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
 
     reader.onload = (e) => {
       try {
-        const data = new Uint8Array(e.target.result)
+        const data     = new Uint8Array(e.target.result)
         const workbook = XLSX.read(data, { type: 'array', codepage: 65001 })
-        const sheet = workbook.Sheets[workbook.SheetNames[0]]
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+        const sheet    = workbook.Sheets[workbook.SheetNames[0]]
+        const json     = XLSX.utils.sheet_to_json(sheet, { defval: '' })
 
         if (json.length === 0) {
           setParseError('File rỗng hoặc không có dữ liệu.')
           return
         }
 
-        const firstRow = json[0]
+        const firstRow      = json[0]
+        const hasPartner1   = 'VĐV 1' in firstRow || 'VDV 1' in firstRow
+        const hasPartner2   = 'VĐV 2' in firstRow || 'VDV 2' in firstRow
+        const hasName       = 'Tên' in firstRow || 'Ten' in firstRow || 'Name' in firstRow
+        const hasClub       = 'CLB' in firstRow || 'Club' in firstRow
+        const hasCode       = 'Mã số' in firstRow || 'Ma so' in firstRow || 'CCCD' in firstRow || 'ID' in firstRow
 
-        // Doubles: accept "VĐV 1" + "VĐV 2" columns (or fallback to "Tên")
-        const hasPartner1 = 'VĐV 1' in firstRow || 'VDV 1' in firstRow
-        const hasPartner2 = 'VĐV 2' in firstRow || 'VDV 2' in firstRow
-        const hasName = 'Tên' in firstRow || 'Ten' in firstRow || 'Name' in firstRow
-        const hasClub = 'CLB' in firstRow || 'Club' in firstRow
+        if (requirePlayerCode && !hasCode) {
+          setParseError('File thiếu cột "Mã số" (CCCD / ID). Giải chuyên nghiệp yêu cầu mã định danh.')
+          return
+        }
 
         const useDoublesColumns = isDoubles && hasPartner1 && hasPartner2
 
@@ -68,7 +80,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
           setParseError(
             isDoubles
               ? 'File cần có cột "VĐV 1", "VĐV 2" và "CLB" cho nội dung đôi.'
-              : 'File thiếu cột bắt buộc. Cần có cột "Tên" (hoặc "Name") và "CLB" (hoặc "Club").'
+              : 'File thiếu cột bắt buộc. Cần có cột "Tên" (hoặc "Name") và "CLB".'
           )
           return
         }
@@ -88,9 +100,12 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
               name = String(row['Tên'] || row['Ten'] || row['Name'] || '').trim()
             }
             const club = String(row['CLB'] || row['Club'] || '').trim() || 'Tự do'
-            return { name, club }
+            const player_code = hasCode
+              ? String(row['Mã số'] || row['Ma so'] || row['CCCD'] || row['ID'] || '').trim() || null
+              : null
+            return { name, club, player_code }
           })
-          .filter(p => p.name) // chỉ bỏ qua dòng không có tên
+          .filter(p => p.name)
 
         if (parsed.length === 0) {
           setParseError('Không tìm thấy dòng dữ liệu hợp lệ nào.')
@@ -98,13 +113,21 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
         }
 
         setPlayers(prev => {
-          const existingNames = new Set(prev.map(p => p.name.toLowerCase()))
-          const added = parsed
-            .filter(p => !existingNames.has(p.name.toLowerCase()))
-            .map(p => ({ ...p, _local: true, _key: crypto.randomUUID() }))
+          const existingCodes = requirePlayerCode
+            ? new Set(prev.map(p => p.player_code).filter(Boolean))
+            : null
+          const existingNames = !requirePlayerCode
+            ? new Set(prev.map(p => p.name.toLowerCase()))
+            : null
+
+          const added = parsed.filter(p => {
+            if (requirePlayerCode) return p.player_code && !existingCodes.has(p.player_code)
+            return !existingNames.has(p.name.toLowerCase())
+          }).map(p => ({ ...p, _local: true, _key: crypto.randomUUID() }))
+
           const skipped = parsed.length - added.length
           if (skipped > 0) {
-            setParseError(`Đã bỏ qua ${skipped} VĐV vì tên đã tồn tại trong danh sách.`)
+            setParseError(`Đã bỏ qua ${skipped} VĐV vì ${requirePlayerCode ? 'mã số' : 'tên'} đã tồn tại.`)
           }
           return [...prev, ...added]
         })
@@ -114,7 +137,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
     }
 
     reader.readAsArrayBuffer(file)
-  }, [])
+  }, [requirePlayerCode, isDoubles])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -139,17 +162,26 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
   function addPlayer() {
     const name = newName.trim()
     const club = newClub.trim()
+    const code = newCode.trim() || null
     const errs = {}
+
     if (!name) errs.name = 'Nhập tên VĐV'
     if (!club) errs.club = 'Nhập tên CLB'
-    if (name && players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    if (requirePlayerCode && !code) errs.code = 'Nhập mã số VĐV'
+
+    if (requirePlayerCode && code && players.some(p => p.player_code === code)) {
+      errs.code = 'Mã số này đã có trong danh sách'
+    }
+    if (!requirePlayerCode && name && players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
       errs.name = 'Tên này đã có trong danh sách'
     }
+
     if (Object.keys(errs).length > 0) { setAddErrors(errs); return }
 
-    setPlayers(prev => [...prev, { name, club, _local: true, _key: crypto.randomUUID() }])
+    setPlayers(prev => [...prev, { name, club, player_code: code, _local: true, _key: crypto.randomUUID() }])
     setNewName('')
     setNewClub('')
+    setNewCode('')
     setAddErrors({})
     setImportSuccess(false)
   }
@@ -157,14 +189,15 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
   // ── Validation ─────────────────────────────────────────────────────────────
   function validate() {
     const empty = players.find(p => !p.name.trim() || !p.club.trim())
-    if (empty) return `Có dòng thiếu Tên hoặc CLB. Vui lòng điền đầy đủ.`
+    if (empty) return 'Có dòng thiếu Tên hoặc CLB.'
 
-    const names = players.map(p => p.name.trim().toLowerCase())
-    const dupes = names.filter((n, i) => names.indexOf(n) !== i)
-    if (dupes.length > 0) {
-      return `Có tên bị trùng: ${[...new Set(dupes)].map(n =>
-        players.find(p => p.name.toLowerCase() === n)?.name
-      ).join(', ')}`
+    if (requirePlayerCode) {
+      const missingCode = players.find(p => !p.player_code?.trim())
+      if (missingCode) return `VĐV "${missingCode.name}" chưa có mã số. Giải chuyên nghiệp yêu cầu mã số cho tất cả VĐV.`
+
+      const codes = players.map(p => p.player_code?.trim())
+      const dupeCodes = codes.filter((c, i) => c && codes.indexOf(c) !== i)
+      if (dupeCodes.length > 0) return `Mã số bị trùng: ${[...new Set(dupeCodes)].join(', ')}`
     }
 
     return null
@@ -190,17 +223,21 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
           club:          p.club.trim(),
           tournament_id: tournamentId,
           ...(eventId ? { event_id: eventId } : {}),
+          ...(p.player_code ? { player_code: p.player_code.trim() } : {}),
         }))
       )
       if (error) throw error
 
-      // Mark all as saved
       setPlayers(prev => prev.map(p => ({ ...p, _local: false })))
       setImportSuccess(true)
       onImportComplete?.(players.length)
     } catch (err) {
       if (err.code === '23505') {
-        setGlobalError('Một số VĐV đã tồn tại trong giải đấu này (tên trùng).')
+        setGlobalError(
+          requirePlayerCode
+            ? 'Một số mã số VĐV đã tồn tại trong nội dung này (mã số trùng).'
+            : 'Đã có lỗi trùng lặp khi lưu. Vui lòng kiểm tra lại danh sách.'
+        )
       } else {
         setGlobalError(`Lỗi khi import: ${err.message}`)
       }
@@ -213,26 +250,37 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
   function downloadSample() {
     let data, filename
     if (isDoubles) {
+      const header = requirePlayerCode
+        ? ['Mã số', 'VĐV 1', 'VĐV 2', 'CLB']
+        : ['VĐV 1', 'VĐV 2', 'CLB']
       data = [
-        ['VĐV 1', 'VĐV 2', 'CLB'],
-        ['Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
-        ['Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt'],
-        ['Hoàng Văn Em', 'Vũ Văn Phúc', 'CLB Tiến Phát'],
+        header,
+        ...(requirePlayerCode
+          ? [['001001', 'Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
+             ['001002', 'Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]
+          : [['Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
+             ['Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]),
       ]
       filename = 'mau_danh_sach_doi.xlsx'
     } else {
+      const header = requirePlayerCode ? ['Mã số', 'Tên', 'CLB'] : ['Tên', 'CLB']
       data = [
-        ['Tên', 'CLB'],
-        ['Nguyễn Văn An', 'CLB Thành Công'],
-        ['Trần Thị Bình', 'CLB Sao Việt'],
-        ['Lê Văn Cường', 'CLB Tiến Phát'],
-        ['Phạm Thị Dung', 'CLB Thể Thao'],
-        ['Hoàng Văn Em', 'CLB Sao Việt'],
+        header,
+        ...(requirePlayerCode
+          ? [['001001', 'Nguyễn Văn An', 'CLB Thành Công'],
+             ['001002', 'Trần Thị Bình', 'CLB Sao Việt'],
+             ['001003', 'Lê Văn Cường', 'CLB Tiến Phát']]
+          : [['Nguyễn Văn An', 'CLB Thành Công'],
+             ['Trần Thị Bình', 'CLB Sao Việt'],
+             ['Lê Văn Cường', 'CLB Tiến Phát']]),
       ]
-      filename = 'mau_danh_sach_vdv.xlsx'
+      filename = requirePlayerCode ? 'mau_danh_sach_chuyen_nghiep.xlsx' : 'mau_danh_sach_vdv.xlsx'
     }
     const ws = XLSX.utils.aoa_to_sheet(data)
-    ws['!cols'] = isDoubles ? [{ wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 25 }, { wch: 20 }]
+    const colWidths = requirePlayerCode
+      ? (isDoubles ? [{ wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 12 }, { wch: 25 }, { wch: 20 }])
+      : (isDoubles ? [{ wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 25 }, { wch: 20 }])
+    ws['!cols'] = colWidths
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, isDoubles ? 'Danh sách đôi' : 'Danh sách VĐV')
     XLSX.writeFile(wb, filename)
@@ -242,6 +290,14 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
 
   return (
     <div className="space-y-5">
+
+      {/* ── Professional mode badge ── */}
+      {requirePlayerCode && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-700">
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          <span>Giải chuyên nghiệp — file phải có cột <strong>Mã số</strong> (CCCD / ID)</span>
+        </div>
+      )}
 
       {/* ── Dropzone ── */}
       <div
@@ -262,13 +318,16 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
           {isDoubles ? (
             <>
               Cột bắt buộc:{' '}
+              {requirePlayerCode && <><span className="font-mono bg-gray-100 px-1 rounded">Mã số</span>{' '}</>}
               <span className="font-mono bg-gray-100 px-1 rounded">VĐV 1</span>{' '}
               <span className="font-mono bg-gray-100 px-1 rounded">VĐV 2</span>{' '}
               <span className="font-mono bg-gray-100 px-1 rounded">CLB</span>
             </>
           ) : (
             <>
-              Cột bắt buộc: <span className="font-mono bg-gray-100 px-1 rounded">Tên</span> và{' '}
+              Cột bắt buộc:{' '}
+              {requirePlayerCode && <><span className="font-mono bg-gray-100 px-1 rounded">Mã số</span>{' '}</>}
+              <span className="font-mono bg-gray-100 px-1 rounded">Tên</span>{' '}
               <span className="font-mono bg-gray-100 px-1 rounded">CLB</span>
             </>
           )}
@@ -283,7 +342,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
         </div>
       )}
 
-      {/* Sample download link */}
+      {/* Sample download */}
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-400">Chưa có file? Dùng file mẫu.</span>
         <button
@@ -313,6 +372,9 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 w-10">#</th>
+                  {requirePlayerCode && (
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 w-32">Mã số</th>
+                  )}
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                     {isDoubles ? 'Tên đôi (VĐV1 / VĐV2)' : 'Tên VĐV'}
                   </th>
@@ -326,6 +388,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
                     key={player._key}
                     player={player}
                     index={idx + 1}
+                    showCode={requirePlayerCode}
                     onChange={updatePlayer}
                     onDelete={deletePlayer}
                   />
@@ -339,8 +402,22 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
       {/* ── Add manually ── */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Thêm thủ công</p>
-        <div className="flex gap-2 items-start">
-          <div className="flex-1">
+        <div className="flex gap-2 items-start flex-wrap">
+          {requirePlayerCode && (
+            <div className="w-32">
+              <input
+                placeholder="Mã số"
+                value={newCode}
+                onChange={e => { setNewCode(e.target.value); setAddErrors(p => ({ ...p, code: null })) }}
+                onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
+                  addErrors.code ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
+              />
+              {addErrors.code && <p className="text-xs text-red-600 mt-1">{addErrors.code}</p>}
+            </div>
+          )}
+          <div className="flex-1 min-w-36">
             <input
               placeholder={isDoubles ? 'VĐV1 / VĐV2' : 'Tên VĐV'}
               value={newName}
@@ -352,7 +429,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
             />
             {addErrors.name && <p className="text-xs text-red-600 mt-1">{addErrors.name}</p>}
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-36">
             <input
               placeholder="Câu lạc bộ"
               value={newClub}
@@ -374,7 +451,7 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
         </div>
       </div>
 
-      {/* ── Import button & feedback ── */}
+      {/* ── Feedback ── */}
       {globalError && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -400,13 +477,30 @@ export default function PlayerImport({ tournamentId, eventId, discipline, existi
 
 // ─── PlayerRow ────────────────────────────────────────────────────────────────
 
-function PlayerRow({ player, index, onChange, onDelete }) {
+function PlayerRow({ player, index, showCode, onChange, onDelete }) {
   const [editing, setEditing] = useState(false)
   const key = player._key
 
   return (
     <tr className={`group hover:bg-gray-50 transition-colors ${player._local ? 'bg-blue-50/30' : ''}`}>
       <td className="px-4 py-2 text-xs text-gray-400">{index}</td>
+
+      {showCode && (
+        <td className="px-4 py-2">
+          {editing ? (
+            <input
+              value={player.player_code ?? ''}
+              onChange={e => onChange(key, 'player_code', e.target.value || null)}
+              className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Mã số"
+            />
+          ) : (
+            <span className={`text-sm font-mono ${player.player_code ? 'text-gray-700' : 'text-red-400 italic'}`}>
+              {player.player_code ?? '— chưa có —'}
+            </span>
+          )}
+        </td>
+      )}
 
       <td className="px-4 py-2">
         {editing ? (

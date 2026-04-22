@@ -98,10 +98,11 @@ export default function EventSetup() {
   const [saved, setSaved]           = useState(false)
 
   // ── Form state ──────────────────────────────────────────────────────────────
-  const [format, setFormat]               = useState('group_then_knockout')
-  const [numGroups, setNumGroups]         = useState(4)
-  const [numFirst, setNumFirst]           = useState(4)
-  const [numSecond, setNumSecond]         = useState(0)
+  const [format, setFormat]                     = useState('group_then_knockout')
+  const [numGroups, setNumGroups]               = useState(4)
+  const [numFirst, setNumFirst]                 = useState(4)
+  const [numSecond, setNumSecond]               = useState(0)
+  const [requirePlayerCode, setRequirePlayerCode] = useState(false)
 
   // Scoring rules
   const [gsSet, setGsSet]   = useState(1)
@@ -139,6 +140,7 @@ export default function EventSetup() {
     setNumGroups(ev.num_groups ?? 4)
     setNumFirst(ev.num_first_place_qualify ?? 4)
     setNumSecond(ev.num_second_place_qualify ?? 0)
+    setRequirePlayerCode(ev.require_player_code ?? false)
 
     const sr = ev.scoring_rules ?? {}
     setGsSet(sr.group_stage?.sets ?? 1)
@@ -172,6 +174,7 @@ export default function EventSetup() {
           num_first_place_qualify:   format === 'group_then_knockout' ? Number(numFirst)  : null,
           num_second_place_qualify:  format === 'group_then_knockout' ? Number(numSecond) : null,
           scoring_rules:             scoringRules,
+          require_player_code:       requirePlayerCode,
         })
         .eq('id', eventId)
       if (err) throw err
@@ -366,6 +369,35 @@ export default function EventSetup() {
               )}
             </div>
           </div>
+        </Section>
+
+        {/* ── SECTION: Chế độ chuyên nghiệp ── */}
+        <Section icon={Info} title="Chế độ thi đấu">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={requirePlayerCode}
+              onClick={() => { setRequirePlayerCode(v => !v); setSaved(false) }}
+              className={cn(
+                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0',
+                requirePlayerCode ? 'bg-blue-500' : 'bg-gray-200',
+              )}
+            >
+              <span className={cn(
+                'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                requirePlayerCode ? 'translate-x-4' : 'translate-x-0',
+              )} />
+            </button>
+            <div>
+              <p className="text-sm font-medium text-gray-700">Giải chuyên nghiệp — yêu cầu mã số VĐV</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {requirePlayerCode
+                  ? 'File import phải có cột "Mã số" (CCCD / ID). Dùng mã này làm định danh duy nhất.'
+                  : 'Giải phong trào — không cần mã số, nhập tên tự do.'}
+              </p>
+            </div>
+          </label>
         </Section>
 
         {/* ── Errors / saved ── */}

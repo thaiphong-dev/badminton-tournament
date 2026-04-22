@@ -137,6 +137,7 @@ export default function EventPlayersPage() {
           eventId={eventId}
           discipline={event.discipline}
           existingPlayers={players}
+          requirePlayerCode={event.require_player_code ?? false}
           onImportComplete={handleImportComplete}
         />
       </div>

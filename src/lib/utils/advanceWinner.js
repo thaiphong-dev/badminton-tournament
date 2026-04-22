@@ -10,19 +10,16 @@ import { checkAndCompleteTournament } from '@/lib/utils/tournamentCompletion'
  * SF:   M1,M2 → Final M1   losers → Third Place M1
  */
 function getNextMatchInfo(stage, matchNumber) {
+  const next = (nextStage) => ({
+    nextStage,
+    nextMatchNum: Math.ceil(matchNumber / 2),
+    nextField:    matchNumber % 2 === 1 ? 'player1_id' : 'player2_id',
+  })
   switch (stage) {
-    case 'round_of_16':
-      return {
-        nextStage:    'quarter',
-        nextMatchNum: Math.ceil(matchNumber / 2),
-        nextField:    matchNumber % 2 === 1 ? 'player1_id' : 'player2_id',
-      }
-    case 'quarter':
-      return {
-        nextStage:    'semi',
-        nextMatchNum: Math.ceil(matchNumber / 2),
-        nextField:    matchNumber % 2 === 1 ? 'player1_id' : 'player2_id',
-      }
+    case 'round_of_64': return next('round_of_32')
+    case 'round_of_32': return next('round_of_16')
+    case 'round_of_16': return next('quarter')
+    case 'quarter':     return next('semi')
     case 'semi':
       return {
         nextStage:    'final',
@@ -143,7 +140,7 @@ export async function advanceWinner(completedMatch) {
  */
 export async function repairBracketLinks(matches, tournamentId, eventId = null) {
   // Process in round order so earlier rounds fill before later ones check
-  const STAGE_ORDER = ['round_of_16', 'quarter', 'semi']
+  const STAGE_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarter', 'semi']
   const completed = STAGE_ORDER
     .flatMap(stage =>
       matches.filter(m => m.stage === stage && m.status === 'completed' && m.winner_id)

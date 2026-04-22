@@ -18,12 +18,14 @@ import Breadcrumb from '@/components/layout/Breadcrumb'
 import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 import { cn } from '@/lib/utils/cn'
 
-// ── Stage config ──────────────────────────────────────────────────────────────
-const STAGES = [
-  { key: 'round_of_16', label: '1/8',      short: '1/8',   count: 8 },
-  { key: 'quarter',     label: 'Tứ kết',   short: 'TK',    count: 4 },
-  { key: 'semi',        label: 'Bán kết',  short: 'BK',    count: 2 },
-  { key: 'final',       label: 'Chung kết + Hạng 3', short: 'CK', count: 2 },
+// ── Stage config (all possible stages, ordered largest → final) ───────────────
+const ALL_STAGES = [
+  { key: 'round_of_64', label: '1/32',    short: '1/32' },
+  { key: 'round_of_32', label: '1/16',    short: '1/16' },
+  { key: 'round_of_16', label: '1/8',     short: '1/8'  },
+  { key: 'quarter',     label: 'Tứ kết',  short: 'TK'   },
+  { key: 'semi',        label: 'Bán kết', short: 'BK'   },
+  { key: 'final',       label: 'Chung kết + Hạng 3', short: 'CK' },
 ]
 
 const STATUS_BADGE = {
@@ -41,7 +43,8 @@ export default function KnockoutPage() {
   const [loading, setLoading]         = useState(true)
   const [generating, setGenerating]   = useState(false)
   const [error, setError]             = useState(null)
-  const [activeStage, setActiveStage]   = useState('round_of_16')
+  const [activeStage, setActiveStage]   = useState(null)
+  const initialStageSet                 = useRef(false)
   const [scoreMatch, setScoreMatch]     = useState(null)
   const [viewMode, setViewMode]         = useState('list')  // 'list' | 'bracket'
   const [downloading, setDownloading]   = useState(false)
@@ -143,16 +146,39 @@ export default function KnockoutPage() {
   async function generateBracket(t, allPlayers, ev = null) {
     setGenerating(true)
     try {
-      const config = ev ?? t
-      const numFirst  = config.num_first_place_qualify  ?? 12
-      const numSecond = config.num_second_place_qualify ?? 4
-      const evId = ev?.id ?? null
+      const evId   = ev?.id ?? null
+      const format = ev?.format ?? 'group_then_knockout'
 
-      const qualified = await getQualifiedPlayers(t.id, numFirst, numSecond, evId)
-      if (qualified.length === 0) throw new Error('Chưa có VĐV đủ điều kiện. Hoàn thành vòng bảng trước.')
+      let qualified
+      if (format === 'knockout_only') {
+        // Pure knockout: seed imported players directly (by creation order → seed 1…N)
+        if (allPlayers.length === 0)
+          throw new Error('Chưa có VĐV nào. Hãy import VĐV trước.')
+        qualified = [...allPlayers]
+          .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
+          .map((p, i) => ({
+            player_id:   p.id,
+            seed:        i + 1,
+            player_name: p.name,
+            club:        p.club,
+          }))
+      } else {
+        const numFirst  = ev?.num_first_place_qualify  ?? t.num_first_place_qualify  ?? 12
+        const numSecond = ev?.num_second_place_qualify ?? t.num_second_place_qualify ?? 4
+        qualified = await getQualifiedPlayers(t.id, numFirst, numSecond, evId)
+        if (qualified.length === 0)
+          throw new Error('Chưa có VĐV đủ điều kiện. Hoàn thành vòng bảng trước.')
+      }
 
       const saved = await saveKnockoutBracket(qualified, t.id, evId)
       setMatches(saved)
+
+      // For knockout_only, advance event status to 'knockout' (no group stage transition)
+      if (format === 'knockout_only' && evId && ev?.status === 'setup') {
+        const { data: updatedEv } = await supabase
+          .from('events').update({ status: 'knockout' }).eq('id', evId).select().single()
+        if (updatedEv) setEvent(updatedEv)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -240,6 +266,22 @@ export default function KnockoutPage() {
     return map
   }, [matches])
 
+  // Show only stages that actually have matches in this bracket
+  const visibleStages = useMemo(() => {
+    if (matches.length === 0) return ALL_STAGES.slice(2) // default: show from 1/8
+    return ALL_STAGES.filter(s =>
+      s.key === 'final' || (byStage[s.key] || []).length > 0
+    )
+  }, [byStage, matches.length])
+
+  // Auto-select the first visible stage — runs once when real matches first arrive
+  useEffect(() => {
+    if (matches.length > 0 && !initialStageSet.current) {
+      initialStageSet.current = true
+      setActiveStage(visibleStages[0]?.key ?? null)
+    }
+  }, [matches.length, visibleStages])
+
   const champion = useMemo(() => {
     const fin = byStage['final']?.[0]
     if (fin?.status === 'completed' && fin.winner_id) return playerMap[fin.winner_id]
@@ -260,7 +302,6 @@ export default function KnockoutPage() {
 
   const disciplineIcon  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
   const disciplineLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
-  const activeStatus    = event?.status ?? tournament?.status
   const statusBadgeVar  = event
     ? (EVENT_STATUS_BADGE[event.status] || 'default')
     : (STATUS_BADGE[tournament?.status] || 'default')
@@ -354,7 +395,7 @@ export default function KnockoutPage() {
           {viewMode === 'list' && (
             <div className="flex-1 overflow-x-auto">
               <div className="flex min-w-max">
-                {STAGES.map(stage => {
+                {visibleStages.map(stage => {
                   const stageMatches = byStage[stage.key] || []
                   const done  = stageMatches.filter(m => m.status === 'completed').length
                   const total = stageMatches.length
@@ -529,16 +570,15 @@ function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick }) {
 // ── KnockoutMatchCard ─────────────────────────────────────────────────────────
 
 function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false }) {
-  const p1   = match.player1_id ? (playerMap[match.player1_id] ?? { name: '?', club: '' }) : null
-  const p2   = match.player2_id ? (playerMap[match.player2_id] ?? { name: '?', club: '' }) : null
-  const done = match.status === 'completed'
-  const canClick = !!(p1 && p2)  // only clickable when both players are known
+  const p1     = match.player1_id ? (playerMap[match.player1_id] ?? { name: '?', club: '' }) : null
+  const p2     = match.player2_id ? (playerMap[match.player2_id] ?? { name: '?', club: '' }) : null
+  const done   = match.status === 'completed'
+  // A bye match: completed with winner but one slot is empty
+  const isBye  = done && !!match.winner_id && (!match.player1_id || !match.player2_id)
+  const canClick = !!(p1 && p2) && !isBye
 
   const scores1 = Array.isArray(match.player1_scores) ? match.player1_scores : []
   const scores2 = Array.isArray(match.player2_scores) ? match.player2_scores : []
-  const scoreText = scores1.length > 0
-    ? scores1.map((s, i) => `${s}–${scores2[i] ?? 0}`).join('  ')
-    : null
 
   const p1Won = done && match.winner_id === match.player1_id
   const p2Won = done && match.winner_id === match.player2_id
@@ -561,11 +601,11 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
       {/* Player 1 */}
       <PlayerRow
         player={p1}
-        score={scoreText ? scores1 : null}
         scores={scores1}
         opponentScores={scores2}
         isWinner={p1Won}
-        placeholder="Chờ kết quả..."
+        placeholder={isBye && !p1 ? 'BYE' : 'Chờ kết quả...'}
+        isByeSlot={isBye && !p1}
       />
 
       <div className="text-center text-xs text-gray-300 my-1 font-medium">vs</div>
@@ -576,7 +616,8 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
         scores={scores2}
         opponentScores={scores1}
         isWinner={p2Won}
-        placeholder="Chờ kết quả..."
+        placeholder={isBye && !p2 ? 'BYE' : 'Chờ kết quả...'}
+        isByeSlot={isBye && !p2}
       />
 
       {/* Status hint */}
@@ -600,16 +641,23 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
   )
 }
 
-function PlayerRow({ player, scores, opponentScores, isWinner, placeholder }) {
+function PlayerRow({ player, scores, opponentScores, isWinner, placeholder, isByeSlot }) {
   const scoreText = scores && scores.length > 0
     ? scores.map((s, i) => `${s}–${opponentScores?.[i] ?? 0}`).join('  ')
     : null
 
   if (!player) {
     return (
-      <div className="flex items-center gap-2 py-1 opacity-40">
-        <div className="w-2 h-2 rounded-full bg-gray-300 shrink-0" />
-        <span className="text-xs text-gray-400 italic">{placeholder}</span>
+      <div className={cn('flex items-center gap-2 py-1', isByeSlot ? 'opacity-70' : 'opacity-40')}>
+        <div className={cn('w-2 h-2 rounded-full shrink-0', isByeSlot ? 'bg-gray-200' : 'bg-gray-300')} />
+        <span className={cn(
+          'text-xs',
+          isByeSlot
+            ? 'text-gray-400 font-semibold tracking-wide uppercase'
+            : 'text-gray-400 italic',
+        )}>
+          {placeholder}
+        </span>
       </div>
     )
   }
