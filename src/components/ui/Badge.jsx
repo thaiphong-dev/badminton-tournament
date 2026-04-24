@@ -7,6 +7,7 @@ const variants = {
   yellow: 'bg-yellow-100 text-yellow-700',
   red: 'bg-red-100 text-red-700',
   purple: 'bg-purple-100 text-purple-700',
+  orange: 'bg-orange-100 text-orange-700',
 }
 
 export default function Badge({ children, variant = 'default', className }) {

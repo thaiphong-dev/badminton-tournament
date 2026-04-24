@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Settings, LayoutList, GitBranch, AlertCircle, CheckCircle,
-  ChevronRight, Loader2, Info,
+  ChevronRight, Loader2, Info, ClipboardList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FORMAT_OPTIONS, FORMAT_LABELS } from '@/lib/constants'
@@ -103,6 +103,7 @@ export default function EventSetup() {
   const [numFirst, setNumFirst]                 = useState(4)
   const [numSecond, setNumSecond]               = useState(0)
   const [requirePlayerCode, setRequirePlayerCode] = useState(false)
+  const [attendanceEnabled, setAttendanceEnabled] = useState(false)
 
   // Scoring rules
   const [gsSet, setGsSet]   = useState(1)
@@ -141,6 +142,7 @@ export default function EventSetup() {
     setNumFirst(ev.num_first_place_qualify ?? 4)
     setNumSecond(ev.num_second_place_qualify ?? 0)
     setRequirePlayerCode(ev.require_player_code ?? false)
+    setAttendanceEnabled(ev.attendance_enabled ?? false)
 
     const sr = ev.scoring_rules ?? {}
     setGsSet(sr.group_stage?.sets ?? 1)
@@ -175,6 +177,7 @@ export default function EventSetup() {
           num_second_place_qualify:  format === 'group_then_knockout' ? Number(numSecond) : null,
           scoring_rules:             scoringRules,
           require_player_code:       requirePlayerCode,
+          attendance_enabled:        attendanceEnabled,
         })
         .eq('id', eventId)
       if (err) throw err
@@ -395,6 +398,35 @@ export default function EventSetup() {
                 {requirePlayerCode
                   ? 'File import phải có cột "Mã số" (CCCD / ID). Dùng mã này làm định danh duy nhất.'
                   : 'Giải phong trào — không cần mã số, nhập tên tự do.'}
+              </p>
+            </div>
+          </label>
+        </Section>
+
+        {/* ── SECTION: Điểm danh ── */}
+        <Section icon={ClipboardList} title="Điểm danh">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={attendanceEnabled}
+              onClick={() => { setAttendanceEnabled(v => !v); setSaved(false) }}
+              className={cn(
+                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0',
+                attendanceEnabled ? 'bg-blue-500' : 'bg-gray-200',
+              )}
+            >
+              <span className={cn(
+                'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                attendanceEnabled ? 'translate-x-4' : 'translate-x-0',
+              )} />
+            </button>
+            <div>
+              <p className="text-sm font-medium text-gray-700">Bật bước điểm danh trước khi thi đấu</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {attendanceEnabled
+                  ? 'Các trận đấu sẽ bị khóa cho đến khi VĐV được đánh dấu có mặt. VĐV vắng mặt sẽ bị xử thua W/O ở tất cả các trận của họ.'
+                  : 'Tất cả VĐV tự động được coi là có mặt — bỏ qua bước điểm danh.'}
               </p>
             </div>
           </label>

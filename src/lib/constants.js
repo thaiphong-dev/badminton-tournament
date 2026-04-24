@@ -43,6 +43,7 @@ export const EVENT_STATUS = {
 
 export const EVENT_STATUS_LABELS = {
   setup:       'Thiết lập',
+  attendance:  'Điểm danh',
   group_stage: 'Vòng bảng',
   knockout:    'Knockout',
   completed:   'Hoàn thành',
@@ -50,6 +51,7 @@ export const EVENT_STATUS_LABELS = {
 
 export const EVENT_STATUS_BADGE = {
   setup:       'yellow',
+  attendance:  'orange',
   group_stage: 'blue',
   knockout:    'purple',
   completed:   'green',

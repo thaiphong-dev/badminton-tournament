@@ -2,67 +2,136 @@ import { supabase } from '@/lib/supabase'
 
 /**
  * Calculate group standings from match results.
+ *
+ * Sort order (BWF-aligned):
+ *   1. Wins
+ *   2. Head-to-head results among tied players (mini-standings)
+ *   3. Sets difference  (hiệu số hiệp)
+ *   4. Points difference (hiệu số điểm)
+ *
  * @param {Array} matches - All matches in the group (any status)
  * @param {Array} players - Players in the group {id, name, club}
  * @returns {Array} Sorted standings with ranks assigned
  */
 export function calculateStandings(matches, players) {
-  const standings = players.map(player => ({
-    player_id: player.id,
-    player_name: player.name,
-    club: player.club,
-    points: 0,
-    wins: 0,
-    losses: 0,
-    score_for: 0,
+  const completedMatches = matches.filter(m => m.status === 'completed' && m.winner_id)
+
+  // Build stats map keyed by player id
+  const statsMap = Object.fromEntries(players.map(p => [p.id, {
+    player_id:    p.id,
+    player_name:  p.name,
+    club:         p.club,
+    points:       0,
+    wins:         0,
+    losses:       0,
+    sets_for:     0,
+    sets_against: 0,
+    score_for:    0,
     score_against: 0,
-    score_diff: 0,
-  }))
+  }]))
 
-  matches
-    .filter(m => m.status === 'completed' && m.winner_id)
-    .forEach(match => {
-      const winner = standings.find(s => s.player_id === match.winner_id)
-      const loserId = match.player1_id === match.winner_id
-        ? match.player2_id
-        : match.player1_id
-      const loser = standings.find(s => s.player_id === loserId)
+  completedMatches.forEach(match => {
+    const p1 = statsMap[match.player1_id]
+    const p2 = statsMap[match.player2_id]
+    if (!p1 || !p2) return
 
-      if (!winner || !loser) return
+    const s1arr = Array.isArray(match.player1_scores)
+      ? match.player1_scores : JSON.parse(match.player1_scores || '[]')
+    const s2arr = Array.isArray(match.player2_scores)
+      ? match.player2_scores : JSON.parse(match.player2_scores || '[]')
 
-      const scores1 = Array.isArray(match.player1_scores)
-        ? match.player1_scores
-        : JSON.parse(match.player1_scores || '[]')
-      const scores2 = Array.isArray(match.player2_scores)
-        ? match.player2_scores
-        : JSON.parse(match.player2_scores || '[]')
-
-      const p1 = standings.find(s => s.player_id === match.player1_id)
-      const p2 = standings.find(s => s.player_id === match.player2_id)
-
-      // Accumulate scores set by set
-      scores1.forEach((s1, idx) => {
-        const s2 = scores2[idx] ?? 0
-        if (p1) { p1.score_for += s1; p1.score_against += s2 }
-        if (p2) { p2.score_for += s2; p2.score_against += s1 }
-      })
-
-      winner.wins += 1
-      winner.points += 2
-      loser.losses += 1
+    // Accumulate points and sets set-by-set
+    s1arr.forEach((s1, idx) => {
+      const s2 = s2arr[idx] ?? 0
+      p1.score_for += s1; p1.score_against += s2
+      p2.score_for += s2; p2.score_against += s1
+      if (s1 > s2)      { p1.sets_for++; p2.sets_against++ }
+      else if (s2 > s1) { p2.sets_for++; p1.sets_against++ }
     })
 
-  standings.forEach(s => { s.score_diff = s.score_for - s.score_against })
-
-  standings.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points
-    if (b.wins !== a.wins) return b.wins - a.wins
-    return b.score_diff - a.score_diff
+    const winner = statsMap[match.winner_id]
+    const loserId = match.player1_id === match.winner_id ? match.player2_id : match.player1_id
+    const loser   = statsMap[loserId]
+    if (winner) { winner.wins++; winner.points += 2 }
+    if (loser)  { loser.losses++ }
   })
 
-  standings.forEach((s, idx) => { s.rank = idx + 1 })
+  const standings = Object.values(statsMap).map(s => ({
+    ...s,
+    sets_diff:  s.sets_for  - s.sets_against,
+    score_diff: s.score_for - s.score_against,
+  }))
 
-  return standings
+  // Sort using wins → head-to-head → sets_diff → score_diff
+  const sorted = resolveStandings(standings, completedMatches)
+  sorted.forEach((s, idx) => { s.rank = idx + 1 })
+  return sorted
+}
+
+/**
+ * Group players by wins, then resolve ties within each group.
+ */
+function resolveStandings(standings, completedMatches) {
+  const byWins = new Map()
+  standings.forEach(s => {
+    if (!byWins.has(s.wins)) byWins.set(s.wins, [])
+    byWins.get(s.wins).push(s)
+  })
+
+  const result = []
+  ;[...byWins.keys()].sort((a, b) => b - a).forEach(wins => {
+    result.push(...resolveGroup(byWins.get(wins), completedMatches))
+  })
+  return result
+}
+
+/**
+ * Resolve ordering within a group of equally-won players.
+ * Uses head-to-head mini-standings, then falls back to overall sets/score diffs.
+ */
+function resolveGroup(group, completedMatches) {
+  if (group.length === 1) return group
+
+  const tiedIds   = new Set(group.map(s => s.player_id))
+  const h2hMatches = completedMatches.filter(m =>
+    tiedIds.has(m.player1_id) && tiedIds.has(m.player2_id)
+  )
+
+  // Mini head-to-head stats — only matches between the tied players
+  const mini = Object.fromEntries(
+    group.map(s => [s.player_id, { wins: 0, sets_diff: 0, score_diff: 0 }])
+  )
+
+  h2hMatches.forEach(m => {
+    const s1arr = Array.isArray(m.player1_scores) ? m.player1_scores : JSON.parse(m.player1_scores || '[]')
+    const s2arr = Array.isArray(m.player2_scores) ? m.player2_scores : JSON.parse(m.player2_scores || '[]')
+    const p1m = mini[m.player1_id]
+    const p2m = mini[m.player2_id]
+
+    s1arr.forEach((s1, idx) => {
+      const s2 = s2arr[idx] ?? 0
+      if (p1m) p1m.score_diff += s1 - s2
+      if (p2m) p2m.score_diff += s2 - s1
+      if (s1 > s2)      { if (p1m) p1m.sets_diff++; if (p2m) p2m.sets_diff-- }
+      else if (s2 > s1) { if (p2m) p2m.sets_diff++; if (p1m) p1m.sets_diff-- }
+    })
+    if (m.winner_id && mini[m.winner_id]) mini[m.winner_id].wins++
+  })
+
+  return [...group].sort((a, b) => {
+    const am = mini[a.player_id]
+    const bm = mini[b.player_id]
+    // 1. Head-to-head wins
+    if (bm.wins !== am.wins)             return bm.wins       - am.wins
+    // 2. Head-to-head sets diff
+    if (bm.sets_diff !== am.sets_diff)   return bm.sets_diff  - am.sets_diff
+    // 3. Head-to-head score diff
+    if (bm.score_diff !== am.score_diff) return bm.score_diff - am.score_diff
+    // 4. Overall sets diff
+    if (b.sets_diff !== a.sets_diff)     return b.sets_diff   - a.sets_diff
+    // 5. Overall score diff
+    return b.score_diff - a.score_diff
+  })
 }
 
 /**
@@ -135,13 +204,16 @@ export async function updateGroupStandingsInDB(groupId) {
       return supabase
         .from('group_players')
         .update({
-          points: s.points,
-          wins: s.wins,
-          losses: s.losses,
-          score_for: s.score_for,
+          points:       s.points,
+          wins:         s.wins,
+          losses:       s.losses,
+          sets_for:     s.sets_for,
+          sets_against: s.sets_against,
+          sets_diff:    s.sets_diff,
+          score_for:    s.score_for,
           score_against: s.score_against,
-          score_diff: s.score_diff,
-          rank: s.rank,
+          score_diff:   s.score_diff,
+          rank:         s.rank,
         })
         .eq('id', gp.id)
     })

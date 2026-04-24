@@ -26,6 +26,8 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
         points,
         wins,
         losses,
+        sets_for,
+        sets_against,
         score_for,
         score_against,
         score_diff,
@@ -53,6 +55,8 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
       points:       gp.points,
       wins:         gp.wins,
       losses:       gp.losses,
+      sets_for:     gp.sets_for,
+      sets_against: gp.sets_against,
       score_for:    gp.score_for,
       score_against: gp.score_against,
       score_diff:   gp.score_diff,
@@ -67,12 +71,29 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
     .sort((a, b) => a.group_number - b.group_number)   // order by group
 
   // ── Second-place players (best numSecond) ─────────────────────────────────
+  // Use ratios so groups of different sizes are compared fairly (BWF Cách 2).
+  // Tiebreaker order: win_rate → sets_ratio → score_ratio → score_diff_rate
   const secondPlace = allRecords
     .filter(r => r.rank === 2)
+    .map(r => {
+      const matchesPlayed = r.wins + r.losses
+      return {
+        ...r,
+        win_rate:        matchesPlayed > 0 ? r.wins / matchesPlayed : 0,
+        sets_ratio:      (r.sets_for + r.sets_against) > 0
+                           ? r.sets_for / (r.sets_for + r.sets_against)
+                           : 0,
+        score_ratio:     (r.score_for + r.score_against) > 0
+                           ? r.score_for / (r.score_for + r.score_against)
+                           : 0,
+        score_diff_rate: matchesPlayed > 0 ? r.score_diff / matchesPlayed : 0,
+      }
+    })
     .sort((a, b) => {
-      if (b.points     !== a.points)     return b.points     - a.points
-      if (b.wins       !== a.wins)       return b.wins       - a.wins
-      return b.score_diff - a.score_diff
+      if (b.win_rate        !== a.win_rate)        return b.win_rate        - a.win_rate
+      if (b.sets_ratio      !== a.sets_ratio)      return b.sets_ratio      - a.sets_ratio
+      if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
+      return b.score_diff_rate - a.score_diff_rate
     })
     .slice(0, numSecond)
 

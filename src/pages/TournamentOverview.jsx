@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   Trophy, Users, ChevronRight, Loader2, Settings, LayoutList,
-  GitBranch, Star, AlertCircle, Plus, X, Crown, MapPin, Calendar,
+  GitBranch, Star, AlertCircle, Plus, X, Crown, MapPin, Calendar, ClipboardList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
@@ -21,6 +21,7 @@ function eventRoute(tournamentId, eventId, status) {
   const base = `/tournament/${tournamentId}/event/${eventId}`
   switch (status) {
     case 'setup':       return `${base}/setup`
+    case 'attendance':  return `${base}/attendance`
     case 'group_stage': return `${base}/groups`
     case 'knockout':    return `${base}/knockout`
     case 'completed':   return `${base}/results`
@@ -31,6 +32,7 @@ function eventRoute(tournamentId, eventId, status) {
 function eventCTA(status) {
   switch (status) {
     case 'setup':       return 'Cấu hình'
+    case 'attendance':  return 'Điểm danh'
     case 'group_stage': return 'Vòng bảng'
     case 'knockout':    return 'Knockout'
     case 'completed':   return 'Kết quả'
@@ -41,6 +43,7 @@ function eventCTA(status) {
 function eventCTAIcon(status) {
   switch (status) {
     case 'setup':       return <Settings className="w-4 h-4" />
+    case 'attendance':  return <ClipboardList className="w-4 h-4" />
     case 'group_stage': return <LayoutList className="w-4 h-4" />
     case 'knockout':    return <GitBranch className="w-4 h-4" />
     case 'completed':   return <Star className="w-4 h-4" />
@@ -248,7 +251,8 @@ export default function TournamentOverview() {
                 const label = DISCIPLINE_LABELS[ev.discipline] ?? ev.name
                 const href  = eventRoute(id, ev.id, ev.status)
                 const stripColor = {
-                  completed: 'bg-green-400', knockout: 'bg-purple-400', group_stage: 'bg-blue-400',
+                  completed: 'bg-green-400', knockout: 'bg-purple-400',
+                  group_stage: 'bg-blue-400', attendance: 'bg-orange-400',
                 }[ev.status] ?? 'bg-gray-200'
                 return (
                   <Link
@@ -332,6 +336,7 @@ function EventCard({ event, tournamentId, matchStats, champion }) {
     completed:   'bg-green-400',
     knockout:    'bg-purple-400',
     group_stage: 'bg-blue-400',
+    attendance:  'bg-orange-400',
     setup:       'bg-gray-200',
   }[event.status] ?? 'bg-gray-200'
 

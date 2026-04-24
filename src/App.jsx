@@ -10,6 +10,7 @@ import GroupStagePage from '@/pages/GroupStagePage'
 import KnockoutPage from '@/pages/KnockoutPage'
 import ResultsPage from '@/pages/ResultsPage'
 import TournamentResultsPage from '@/pages/TournamentResultsPage'
+import AttendancePage from '@/pages/AttendancePage'
 
 function NotFound() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
                 just scoped by eventId instead of the tournament-level status. */}
             <Route path="/tournament/:id/event/:eventId/setup"    element={<EventSetup />} />
             <Route path="/tournament/:id/event/:eventId/players"  element={<EventPlayersPage />} />
+            <Route path="/tournament/:id/event/:eventId/attendance" element={<AttendancePage />} />
             <Route path="/tournament/:id/event/:eventId/groups"   element={<GroupStagePage />} />
             <Route path="/tournament/:id/event/:eventId/knockout" element={<KnockoutPage />} />
             <Route path="/tournament/:id/event/:eventId/results"  element={<ResultsPage />} />

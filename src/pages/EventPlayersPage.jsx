@@ -76,7 +76,7 @@ export default function EventPlayersPage() {
   const disciplineIcon  = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const disciplineLabel = DISCIPLINE_LABELS[event.discipline] ?? event.name
   const isDoubles       = isDoublesDiscipline(event.discipline)
-  const nextLabel       = event.format === 'knockout_only' ? 'Tạo bracket' : 'Phân bảng'
+  const nextLabel = event.format === 'knockout_only' ? 'Tạo bracket' : 'Phân bảng'
 
   // Min players needed: at least 2 for knockout-only, or num_groups * 2 for group stage
   const minNeeded = event.format === 'knockout_only'

@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Trophy, Swords, Crown,
   CheckCircle2, Clock, Pencil, Loader2, AlertCircle,
-  LayoutList, GitBranch, ChevronRight, ImageDown,
+  LayoutList, GitBranch, ChevronRight, ImageDown, ClipboardList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
@@ -451,6 +451,19 @@ export default function KnockoutPage() {
             </div>
           )}
 
+          {/* Attendance button (when enabled) */}
+          {event?.attendance_enabled && eventId && matches.length > 0 && (
+            <div className="flex items-center px-3 border-l border-gray-200 shrink-0">
+              <Link
+                to={`/tournament/${id}/event/${eventId}/attendance`}
+                className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 px-2.5 py-1.5 rounded-lg hover:bg-orange-50 transition-colors whitespace-nowrap"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span>Điểm danh</span>
+              </Link>
+            </div>
+          )}
+
           {/* View mode switcher */}
           <div className="flex items-center gap-1 px-3 border-l border-gray-200 shrink-0">
             <button
@@ -486,7 +499,7 @@ export default function KnockoutPage() {
             <BracketView
               matches={matches}
               playerMap={playerMap}
-              onMatchClick={setScoreMatch}
+              onMatchClick={(m) => { if (!m.is_forfeit) setScoreMatch(m) }}
               containerRef={bracketRef}
               tournamentName={tournament?.name}
             />
@@ -496,12 +509,14 @@ export default function KnockoutPage() {
               thirdMatch={byStage['third_place']?.[0]}
               playerMap={playerMap}
               onMatchClick={setScoreMatch}
+              attendanceEnabled={event?.attendance_enabled ?? false}
             />
           ) : (
             <StageMatchList
               matches={byStage[activeStage] || []}
               playerMap={playerMap}
               onMatchClick={setScoreMatch}
+              attendanceEnabled={event?.attendance_enabled ?? false}
             />
           )}
         </div>
@@ -524,7 +539,7 @@ export default function KnockoutPage() {
 
 // ── StageMatchList ─────────────────────────────────────────────────────────────
 
-function StageMatchList({ matches, playerMap, onMatchClick }) {
+function StageMatchList({ matches, playerMap, onMatchClick, attendanceEnabled = false }) {
   if (matches.length === 0) {
     return <p className="text-center py-12 text-sm text-gray-400">Chưa có dữ liệu cho vòng này.</p>
   }
@@ -538,6 +553,7 @@ function StageMatchList({ matches, playerMap, onMatchClick }) {
           label={`Trận ${idx + 1}`}
           playerMap={playerMap}
           onClick={() => onMatchClick(match)}
+          attendanceEnabled={attendanceEnabled}
         />
       ))}
     </div>
@@ -546,20 +562,20 @@ function StageMatchList({ matches, playerMap, onMatchClick }) {
 
 // ── FinalsView ────────────────────────────────────────────────────────────────
 
-function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick }) {
+function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick, attendanceEnabled = false }) {
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">🏆 Chung kết</p>
         {finalMatch
-          ? <KnockoutMatchCard match={finalMatch} label="Chung kết" playerMap={playerMap} onClick={() => onMatchClick(finalMatch)} highlight />
+          ? <KnockoutMatchCard match={finalMatch} label="Chung kết" playerMap={playerMap} onClick={() => onMatchClick(finalMatch)} highlight attendanceEnabled={attendanceEnabled} />
           : <EmptyMatchCard label="Chung kết" />
         }
       </div>
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">🥉 Tranh hạng 3</p>
         {thirdMatch
-          ? <KnockoutMatchCard match={thirdMatch} label="Tranh hạng 3" playerMap={playerMap} onClick={() => onMatchClick(thirdMatch)} />
+          ? <KnockoutMatchCard match={thirdMatch} label="Tranh hạng 3" playerMap={playerMap} onClick={() => onMatchClick(thirdMatch)} attendanceEnabled={attendanceEnabled} />
           : <EmptyMatchCard label="Tranh hạng 3" />
         }
       </div>
@@ -569,13 +585,22 @@ function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick }) {
 
 // ── KnockoutMatchCard ─────────────────────────────────────────────────────────
 
-function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false }) {
-  const p1     = match.player1_id ? (playerMap[match.player1_id] ?? { name: '?', club: '' }) : null
-  const p2     = match.player2_id ? (playerMap[match.player2_id] ?? { name: '?', club: '' }) : null
-  const done   = match.status === 'completed'
-  // A bye match: completed with winner but one slot is empty
-  const isBye  = done && !!match.winner_id && (!match.player1_id || !match.player2_id)
-  const canClick = !!(p1 && p2) && !isBye
+function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false, attendanceEnabled = false }) {
+  const p1 = match.player1_id ? (playerMap[match.player1_id] ?? { name: '?', club: '' }) : null
+  const p2 = match.player2_id ? (playerMap[match.player2_id] ?? { name: '?', club: '' }) : null
+  const done    = match.status === 'completed'
+  const isBye   = done && !!match.winner_id && (!match.player1_id || !match.player2_id)
+  const isForfeit = !!match.is_forfeit
+
+  // Attendance gating
+  const p1Att = attendanceEnabled ? (playerMap[match.player1_id]?.attendance ?? 'present') : 'present'
+  const p2Att = attendanceEnabled ? (playerMap[match.player2_id]?.attendance ?? 'present') : 'present'
+  const isAttendanceLocked = attendanceEnabled && !done && !!(
+    (match.player1_id && p1Att === 'pending') ||
+    (match.player2_id && p2Att === 'pending')
+  )
+
+  const canClick = !!(p1 && p2) && !isBye && !isForfeit && !isAttendanceLocked
 
   const scores1 = Array.isArray(match.player1_scores) ? match.player1_scores : []
   const scores2 = Array.isArray(match.player2_scores) ? match.player2_scores : []
@@ -583,16 +608,24 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
   const p1Won = done && match.winner_id === match.player1_id
   const p2Won = done && match.winner_id === match.player2_id
 
+  // Who forfeited (loser in a forfeit match)
+  const forfeitLoserId = isForfeit
+    ? (match.winner_id === match.player1_id ? match.player2_id : match.player1_id)
+    : null
+  const forfeitLoser = forfeitLoserId ? (playerMap[forfeitLoserId] ?? null) : null
+
   return (
     <button
       onClick={canClick ? onClick : undefined}
       disabled={!canClick}
       className={cn(
         'group w-full text-left border-2 rounded-xl p-4 transition-all',
-        highlight && 'border-yellow-300 bg-yellow-50',
-        !highlight && done && 'border-green-200 bg-green-50/40 hover:border-blue-300 hover:bg-blue-50',
-        !highlight && !done && canClick && 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm',
-        !highlight && !done && !canClick && 'border-dashed border-gray-200 bg-gray-50 cursor-default opacity-60',
+        highlight && !isForfeit && 'border-yellow-300 bg-yellow-50',
+        isForfeit && 'border-orange-200 bg-orange-50/30',
+        isAttendanceLocked && 'border-amber-200 bg-amber-50/30',
+        !highlight && !isForfeit && !isAttendanceLocked && done && 'border-green-200 bg-green-50/40 hover:border-blue-300 hover:bg-blue-50',
+        !highlight && !isForfeit && !isAttendanceLocked && !done && canClick && 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm',
+        !highlight && !isForfeit && !isAttendanceLocked && !done && !canClick && 'border-dashed border-gray-200 bg-gray-50 cursor-default opacity-60',
       )}
     >
       {/* Label */}
@@ -604,8 +637,10 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
         scores={scores1}
         opponentScores={scores2}
         isWinner={p1Won}
+        isForfeitLoser={isForfeit && match.player1_id === forfeitLoserId}
         placeholder={isBye && !p1 ? 'BYE' : 'Chờ kết quả...'}
         isByeSlot={isBye && !p1}
+        isForfeit={isForfeit}
       />
 
       <div className="text-center text-xs text-gray-300 my-1 font-medium">vs</div>
@@ -616,13 +651,27 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
         scores={scores2}
         opponentScores={scores1}
         isWinner={p2Won}
+        isForfeitLoser={isForfeit && match.player2_id === forfeitLoserId}
         placeholder={isBye && !p2 ? 'BYE' : 'Chờ kết quả...'}
         isByeSlot={isBye && !p2}
+        isForfeit={isForfeit}
       />
 
       {/* Status hint */}
       <div className="mt-3 text-xs flex items-center gap-1">
-        {done ? (
+        {isForfeit ? (
+          <>
+            <span className="font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded">W/O</span>
+            <span className="text-orange-600 truncate">
+              {forfeitLoser ? `${forfeitLoser.name} không thi đấu` : 'Xử thua bỏ cuộc'}
+            </span>
+          </>
+        ) : isAttendanceLocked ? (
+          <>
+            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span className="text-amber-600">Chờ điểm danh VĐV</span>
+          </>
+        ) : done ? (
           <>
             <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
             <span className="text-green-600">Hoàn thành</span>
@@ -641,8 +690,8 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
   )
 }
 
-function PlayerRow({ player, scores, opponentScores, isWinner, placeholder, isByeSlot }) {
-  const scoreText = scores && scores.length > 0
+function PlayerRow({ player, scores, opponentScores, isWinner, placeholder, isByeSlot, isForfeitLoser = false, isForfeit = false }) {
+  const scoreText = !isForfeit && scores && scores.length > 0
     ? scores.map((s, i) => `${s}–${opponentScores?.[i] ?? 0}`).join('  ')
     : null
 
@@ -663,14 +712,22 @@ function PlayerRow({ player, scores, opponentScores, isWinner, placeholder, isBy
   }
 
   return (
-    <div className={cn('flex items-center justify-between gap-2 py-1 rounded-lg', isWinner && 'bg-green-100 px-2 -mx-2')}>
+    <div className={cn(
+      'flex items-center justify-between gap-2 py-1 rounded-lg',
+      isWinner && !isForfeitLoser && 'bg-green-100 px-2 -mx-2',
+      isForfeitLoser && 'opacity-40',
+    )}>
       <div className="flex items-center gap-2 min-w-0">
         {isWinner
           ? <Crown className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
           : <div className="w-3.5 h-3.5 shrink-0" />
         }
         <div className="min-w-0">
-          <p className={cn('text-sm truncate', isWinner ? 'font-bold text-gray-900' : 'font-medium text-gray-700')}>
+          <p className={cn(
+            'text-sm truncate',
+            isWinner ? 'font-bold text-gray-900' : 'font-medium text-gray-700',
+            isForfeitLoser && 'line-through text-gray-400',
+          )}>
             {player.name}
           </p>
           <p className="text-xs text-gray-400 truncate">{player.club}</p>

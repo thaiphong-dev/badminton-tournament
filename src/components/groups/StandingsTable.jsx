@@ -1,8 +1,7 @@
-import { Crown, Medal } from 'lucide-react'
+import { Crown, Medal, Info } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
-// Rank icons / row highlights
-function RankCell({ rank, total }) {
+function RankCell({ rank }) {
   if (rank === 1) return (
     <span className="inline-flex items-center gap-1 font-bold text-yellow-600">
       <Crown className="w-3.5 h-3.5" /> 1
@@ -14,6 +13,19 @@ function RankCell({ rank, total }) {
     </span>
   )
   return <span className="text-gray-400">{rank}</span>
+}
+
+function DiffCell({ value }) {
+  return (
+    <span className={cn(
+      'font-medium text-xs',
+      value > 0 && 'text-green-600',
+      value < 0 && 'text-red-500',
+      value === 0 && 'text-gray-400',
+    )}>
+      {value > 0 ? `+${value}` : value}
+    </span>
+  )
 }
 
 export default function StandingsTable({ standings, numQualify = 2 }) {
@@ -32,17 +44,20 @@ export default function StandingsTable({ standings, numQualify = 2 }) {
           <tr className="bg-gray-50 border-b border-gray-200">
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 w-8">#</th>
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">VĐV</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-12" title="Điểm">Đ</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-10" title="Thắng">T</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-10" title="Thua">B</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-14" title="Điểm ghi">+</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-14" title="Điểm mất">-</th>
-            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-16" title="Hiệu số">+/-</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-10" title="Điểm tích lũy (2đ/thắng)">Đ</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-10" title="Số trận thắng">T</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-10" title="Số trận thua">B</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-12" title="Hiệu số hiệp (set thắng − set thua)">H</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-12" title="Tổng điểm ghi được">+</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-12" title="Tổng điểm để mất">−</th>
+            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 w-14" title="Hiệu số điểm (ghi − mất)">+/−</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {standings.map((s, idx) => {
+          {standings.map(s => {
             const willQualify = s.rank <= numQualify
+            // sets_diff: new field; fall back to wins-losses for old data
+            const setsDiff = s.sets_diff ?? (s.wins - s.losses)
             return (
               <tr
                 key={s.player_id}
@@ -54,7 +69,7 @@ export default function StandingsTable({ standings, numQualify = 2 }) {
                 )}
               >
                 <td className="px-3 py-2.5">
-                  <RankCell rank={s.rank} total={standings.length} />
+                  <RankCell rank={s.rank} />
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex flex-col">
@@ -76,18 +91,10 @@ export default function StandingsTable({ standings, numQualify = 2 }) {
                 </td>
                 <td className="px-3 py-2.5 text-center text-green-600 font-medium">{s.wins}</td>
                 <td className="px-3 py-2.5 text-center text-red-400">{s.losses}</td>
-                <td className="px-3 py-2.5 text-center text-gray-600">{s.score_for}</td>
-                <td className="px-3 py-2.5 text-center text-gray-600">{s.score_against}</td>
-                <td className="px-3 py-2.5 text-center">
-                  <span className={cn(
-                    'font-medium text-xs',
-                    s.score_diff > 0 && 'text-green-600',
-                    s.score_diff < 0 && 'text-red-500',
-                    s.score_diff === 0 && 'text-gray-400',
-                  )}>
-                    {s.score_diff > 0 ? `+${s.score_diff}` : s.score_diff}
-                  </span>
-                </td>
+                <td className="px-3 py-2.5 text-center"><DiffCell value={setsDiff} /></td>
+                <td className="px-3 py-2.5 text-center text-gray-500 text-xs">{s.score_for}</td>
+                <td className="px-3 py-2.5 text-center text-gray-500 text-xs">{s.score_against}</td>
+                <td className="px-3 py-2.5 text-center"><DiffCell value={s.score_diff} /></td>
               </tr>
             )
           })}
@@ -95,14 +102,20 @@ export default function StandingsTable({ standings, numQualify = 2 }) {
       </table>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 px-3 py-2 border-t border-gray-100 text-xs text-gray-400">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Nhất bảng
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Nhì bảng
-        </span>
-        <span className="ml-auto">Đ=điểm · T=thắng · B=thua · +/-=hiệu số</span>
+      <div className="border-t border-gray-100 px-3 py-2 space-y-1">
+        <div className="flex items-center gap-4 text-xs text-gray-400">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Nhất bảng
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Nhì bảng
+          </span>
+          <span className="ml-auto">Đ=điểm · T=thắng · B=thua · H=hiệu số hiệp · +/−=hiệu số điểm</span>
+        </div>
+        <div className="flex items-start gap-1 text-xs text-gray-400">
+          <Info className="w-3 h-3 mt-0.5 shrink-0" />
+          <span>Thứ tự xếp hạng: <strong className="text-gray-500">Thắng</strong> → <strong className="text-gray-500">Đối đầu trực tiếp</strong> → <strong className="text-gray-500">H (hiệu số hiệp)</strong> → <strong className="text-gray-500">+/− (hiệu số điểm)</strong></span>
+        </div>
       </div>
     </div>
   )

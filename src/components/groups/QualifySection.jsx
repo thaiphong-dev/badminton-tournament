@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Crown, Medal, Trophy, ChevronRight, AlertCircle, Loader2 } from 'lucide-react'
+import { Crown, Medal, Trophy, ChevronRight, AlertCircle, Loader2, Info } from 'lucide-react'
 import { getQualifiedPlayers, confirmQualification } from '@/lib/utils/qualifyPlayers'
 import Button from '@/components/ui/Button'
 import { cn } from '@/lib/utils/cn'
@@ -99,7 +99,7 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
               icon={<Crown className="w-4 h-4 text-yellow-600" />}
               color="yellow"
               players={qualified.filter(p => p.qualified_as === 'Nhất bảng')}
-            />
+              />
             {/* Best second place */}
             <QualifyGroup
               title={`${numSecond} Nhì bảng tốt nhất`}
@@ -142,24 +142,27 @@ function QualifyGroup({ title, icon, color, players }) {
         {title}
       </div>
       <ul className="divide-y divide-gray-50">
-        {players.map(p => (
-          <li key={p.player_id} className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs text-gray-400 w-5 shrink-0">{p.seed}</span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{p.player_name}</p>
-                <p className="text-xs text-gray-400 truncate">{p.club}</p>
+        {players.map(p => {
+          const diffStr = p.score_diff > 0 ? `+${p.score_diff}` : `${p.score_diff}`
+          return (
+            <li key={p.player_id} className="flex items-center justify-between px-4 py-2 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs text-gray-400 w-5 shrink-0">{p.seed}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{p.player_name}</p>
+                  <p className="text-xs text-gray-400 truncate">{p.club}</p>
+                </div>
               </div>
-            </div>
-            <div className="text-xs text-gray-400 text-right shrink-0 ml-2 tabular-nums">
-              <span className="font-medium text-gray-600">{p.points}đ</span>
-              {' · '}
-              {p.wins}T {p.losses}B
-              {' · '}
-              {p.score_diff > 0 ? `+${p.score_diff}` : p.score_diff}
-            </div>
-          </li>
-        ))}
+              <div className="text-xs text-gray-400 text-right shrink-0 ml-2 tabular-nums">
+                <span className="font-medium text-gray-600">{p.points}đ</span>
+                {' · '}
+                {p.wins}T {p.losses}B
+                {' · '}
+                {diffStr}
+              </div>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
