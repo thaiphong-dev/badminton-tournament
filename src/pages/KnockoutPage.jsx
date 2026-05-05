@@ -4,6 +4,7 @@ import {
   ArrowLeft, Trophy, Swords, Crown,
   CheckCircle2, Clock, Pencil, Loader2, AlertCircle,
   LayoutList, GitBranch, ChevronRight, ImageDown, ClipboardList,
+  Zap, Dices,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
@@ -15,6 +16,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ScoreModal from '@/components/shared/ScoreModal'
 import BracketView from '@/components/knockout/BracketView'
 import Breadcrumb from '@/components/layout/Breadcrumb'
+import DrawKnockout from '@/components/knockout/DrawKnockout'
 import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 import { cn } from '@/lib/utils/cn'
 
@@ -49,6 +51,10 @@ export default function KnockoutPage() {
   const [viewMode, setViewMode]         = useState('list')  // 'list' | 'bracket'
   const [downloading, setDownloading]   = useState(false)
   const bracketRef = useRef(null)
+
+  // Lottery draw mode for knockout_only (when no matches yet)
+  const [pendingSetup, setPendingSetup] = useState(false)   // true = needs user to choose mode
+  const [drawMode, setDrawMode]         = useState('auto')  // 'auto' | 'lottery'
 
   async function handleDownloadBracket() {
     if (!bracketRef.current) return
@@ -107,7 +113,13 @@ export default function KnockoutPage() {
       }
 
       if (knockoutMatches.length === 0) {
-        await generateBracket(tRes.data, pRes.data || [], ev)
+        const format = ev?.format ?? 'group_then_knockout'
+        if (format === 'knockout_only' && (pRes.data || []).length > 0) {
+          // Let user choose: auto-generate or lottery draw
+          setPendingSetup(true)
+        } else {
+          await generateBracket(tRes.data, pRes.data || [], ev)
+        }
       } else {
         await repairBracketLinks(knockoutMatches, id, eventId ?? null)
 
@@ -184,6 +196,18 @@ export default function KnockoutPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  // ── Handlers for lottery draw setup ────────────────────────────────────────
+  async function handleAutoGenerate() {
+    setPendingSetup(false)
+    await generateBracket(tournament, players, event)
+  }
+
+  function handleDrawKnockoutConfirmed(savedMatches) {
+    setMatches(savedMatches)
+    setPendingSetup(false)
+    setDrawMode('auto')
   }
 
   // ── Dedup helper: keep one match per (stage, match_number) ────────────────
@@ -323,6 +347,104 @@ export default function KnockoutPage() {
         >
           Quay lại vòng bảng
         </Link>
+      </div>
+    )
+  }
+
+  // ── Lottery draw setup (knockout_only, no bracket yet) ──────────────────────
+  if (pendingSetup) {
+    const disciplineIcon2  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
+    const disciplineLabel2 = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
+
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {eventId ? (
+          <Breadcrumb
+            className="mb-6"
+            items={[
+              { label: 'Trang chủ', href: '/' },
+              { label: tournament?.name, href: `/tournament/${id}` },
+              { label: disciplineLabel2, href: `/tournament/${id}/event/${eventId}/setup` },
+              { label: 'Knockout' },
+            ]}
+          />
+        ) : (
+          <Link
+            to={`/tournament/${id}/groups`}
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Vòng bảng
+          </Link>
+        )}
+
+        {/* Header */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center shrink-0 text-2xl">
+              {disciplineIcon2 ?? <Swords className="w-6 h-6 text-purple-600" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-gray-900 truncate">
+                {disciplineLabel2 ? `${disciplineLabel2} — Tạo Bracket Knockout` : tournament?.name}
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">{players.length} VĐV · Chọn cách phân hạt giống</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Mode toggle */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <p className="text-sm font-semibold text-gray-700 mb-4">Chọn cách phân hạt giống:</p>
+          <div className="flex gap-3 mb-6">
+            <button
+              onClick={() => setDrawMode('auto')}
+              className={cn(
+                'flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all',
+                drawMode === 'auto'
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300',
+              )}
+            >
+              <Zap className={cn('w-6 h-6', drawMode === 'auto' ? 'text-purple-600' : 'text-gray-400')} />
+              <span className={cn('font-semibold text-sm', drawMode === 'auto' ? 'text-purple-700' : 'text-gray-600')}>
+                Tự động
+              </span>
+              <span className="text-xs text-gray-400 text-center">Phân hạt giống theo thứ tự import</span>
+            </button>
+            <button
+              onClick={() => setDrawMode('lottery')}
+              className={cn(
+                'flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all',
+                drawMode === 'lottery'
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300',
+              )}
+            >
+              <Dices className={cn('w-6 h-6', drawMode === 'lottery' ? 'text-purple-600' : 'text-gray-400')} />
+              <span className={cn('font-semibold text-sm', drawMode === 'lottery' ? 'text-purple-700' : 'text-gray-600')}>
+                Bốc thăm
+              </span>
+              <span className="text-xs text-gray-400 text-center">Bốc từng VĐV vào hạt giống ngẫu nhiên</span>
+            </button>
+          </div>
+
+          {drawMode === 'auto' ? (
+            <button
+              onClick={handleAutoGenerate}
+              className="w-full py-3 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <Zap className="w-4 h-4" />
+              Tạo Bracket Tự Động
+            </button>
+          ) : (
+            <DrawKnockout
+              tournament={tournament}
+              event={event}
+              players={players}
+              onConfirmed={handleDrawKnockoutConfirmed}
+            />
+          )}
+        </div>
       </div>
     )
   }

@@ -42,7 +42,8 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
   const p1   = playerMap[match.player1_id] ?? { name: '?', club: '' }
   const p2   = playerMap[match.player2_id] ?? { name: '?', club: '' }
   const done = match.status === 'completed'
-  const isForfeit = !!match.is_forfeit
+  const isActive   = match.status === 'active'
+  const isForfeit  = !!match.is_forfeit
 
   // Attendance gating
   const p1Att = attendanceEnabled ? (playerMap[match.player1_id]?.attendance ?? 'present') : 'present'
@@ -60,7 +61,6 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
   const p1Won = done && match.winner_id === match.player1_id
   const p2Won = done && match.winner_id === match.player2_id
 
-  // Who forfeited
   const forfeitLoserId = isForfeit
     ? (match.winner_id === match.player1_id ? match.player2_id : match.player1_id)
     : null
@@ -73,10 +73,11 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
       disabled={!canClick}
       className={cn(
         'group w-full text-left border rounded-xl px-4 py-3 transition-all',
-        isForfeit        && 'border-orange-200 bg-orange-50/40 cursor-default',
+        isForfeit          && 'border-orange-200 bg-orange-50/40 cursor-default',
         isAttendanceLocked && 'border-amber-200 bg-amber-50/30 cursor-default',
-        !isForfeit && !isAttendanceLocked && done  && 'bg-green-50/60 border-green-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer',
-        !isForfeit && !isAttendanceLocked && !done && 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm cursor-pointer',
+        isActive           && !isForfeit && 'border-orange-300 bg-orange-50 cursor-pointer ring-2 ring-orange-100',
+        !isForfeit && !isAttendanceLocked && !isActive && done  && 'bg-green-50/60 border-green-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer',
+        !isForfeit && !isAttendanceLocked && !isActive && !done && 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm cursor-pointer',
       )}
     >
       <div className="flex items-center gap-3">
@@ -123,6 +124,8 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
         <div className="shrink-0 ml-1 relative w-5 h-5 flex items-center justify-center">
           {isForfeit ? (
             <CheckCircle2 className="w-4 h-4 text-orange-400" />
+          ) : isActive ? (
+            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
           ) : done ? (
             <>
               <CheckCircle2 className="w-4 h-4 text-green-500 group-hover:opacity-0 transition-opacity absolute" />
@@ -136,31 +139,44 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
         </div>
       </div>
 
-      {/* Hint line */}
-      <p className={cn(
-        'text-xs mt-1.5 flex items-center gap-1',
-        isForfeit        && 'text-orange-500',
-        isAttendanceLocked && 'text-amber-500',
-        !isForfeit && !isAttendanceLocked && done  && 'text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity',
-        !isForfeit && !isAttendanceLocked && !done && 'text-blue-500',
-      )}>
-        {isForfeit ? (
-          <>
-            <span className="font-medium">Xử thua W/O</span>
-            {forfeitLoserId && (
-              <span>– {playerMap[forfeitLoserId]?.name ?? 'VĐV'} không thi đấu</span>
-            )}
-          </>
-        ) : isAttendanceLocked ? (
-          <>
-            <Clock className="w-3 h-3" /> Chờ điểm danh VĐV
-          </>
-        ) : done ? (
-          <><Pencil className="w-3 h-3" /> Chạm để chỉnh sửa</>
-        ) : (
-          <><Clock className="w-3 h-3" /> Chạm để nhập điểm</>
+      {/* Court / wave badges + hint */}
+      <div className="flex items-center gap-2 mt-1.5">
+        {match.court_number != null && (
+          <span className="text-xs font-medium bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+            Sân {match.court_number}
+          </span>
         )}
-      </p>
+        {match.wave_number != null && (
+          <span className="text-xs font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+            Lượt {match.wave_number}
+          </span>
+        )}
+        <p className={cn(
+          'text-xs flex items-center gap-1 flex-1',
+          isForfeit          && 'text-orange-500',
+          isAttendanceLocked && 'text-amber-500',
+          isActive           && 'text-orange-600 font-medium',
+          !isForfeit && !isAttendanceLocked && !isActive && done  && 'text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity',
+          !isForfeit && !isAttendanceLocked && !isActive && !done && 'text-blue-500',
+        )}>
+          {isForfeit ? (
+            <>
+              <span className="font-medium">Xử thua W/O</span>
+              {forfeitLoserId && (
+                <span>– {playerMap[forfeitLoserId]?.name ?? 'VĐV'} không thi đấu</span>
+              )}
+            </>
+          ) : isAttendanceLocked ? (
+            <><Clock className="w-3 h-3" /> Chờ điểm danh VĐV</>
+          ) : isActive ? (
+            <>● Đang đấu</>
+          ) : done ? (
+            <><Pencil className="w-3 h-3" /> Chạm để chỉnh sửa</>
+          ) : (
+            <><Clock className="w-3 h-3" /> Chạm để nhập điểm</>
+          )}
+        </p>
+      </div>
     </button>
   )
 }

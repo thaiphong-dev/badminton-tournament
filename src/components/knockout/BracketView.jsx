@@ -24,7 +24,7 @@ const ROUND_DEFS = [
  * containerRef – forward a ref here to use for image download from the parent.
  * tournamentName – shown as a title in the downloaded image.
  */
-export default function BracketView({ matches, playerMap, onMatchClick, containerRef, tournamentName }) {
+export default function BracketView({ matches, playerMap, onMatchClick, containerRef, tournamentName, rowHeight = 80 }) {
   const byStage = useMemo(() => {
     const map = {}
     matches.forEach(m => {
@@ -41,9 +41,8 @@ export default function BracketView({ matches, playerMap, onMatchClick, containe
   // Only show rounds that actually have matches
   const visibleRounds = ROUND_DEFS.filter(r => (byStage[r.key] || []).length > 0)
 
-  // Scale height to first (largest) round — 80px per match, min 640
-  const firstCount    = visibleRounds.length > 0 ? (byStage[visibleRounds[0].key] || []).length : 8
-  const BRACKET_HEIGHT = Math.max(640, firstCount * 80)
+  const firstCount     = visibleRounds.length > 0 ? (byStage[visibleRounds[0].key] || []).length : 8
+  const BRACKET_HEIGHT = Math.max(rowHeight * 8, firstCount * rowHeight)
 
   return (
     <div className="bg-white rounded-xl overflow-x-auto pb-4">

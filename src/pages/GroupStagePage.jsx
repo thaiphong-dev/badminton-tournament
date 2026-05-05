@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList } from 'lucide-react'
+import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList, Grid } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { getStageScoringRule } from '@/lib/utils/eventHelpers'
@@ -8,11 +8,13 @@ import { calculateStandings } from '@/lib/utils/standingsCalculator'
 import { buildClubColorMap } from '@/components/groups/GroupCard'
 import Badge from '@/components/ui/Badge'
 import GroupRandomizer from '@/components/groups/GroupRandomizer'
+import DrawLottery from '@/components/groups/DrawLottery'
 import StandingsTable from '@/components/groups/StandingsTable'
 import MatchList from '@/components/groups/MatchList'
 import ScoreModal from '@/components/shared/ScoreModal'
 import QualifySection from '@/components/groups/QualifySection'
 import Breadcrumb from '@/components/layout/Breadcrumb'
+import CourtBoard from '@/components/courts/CourtBoard'
 
 const STATUS_BADGE = {
   setup: 'yellow', group_stage: 'blue', knockout: 'purple', completed: 'green',
@@ -30,8 +32,9 @@ export default function GroupStagePage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
 
-  const [selectedGroupIdx, setSelectedGroupIdx] = useState(0)
-  const [scoreMatch, setScoreMatch]             = useState(null)
+  const [activeTab, setActiveTab]   = useState({ type: 'group', idx: 0 })
+  const [scoreMatch, setScoreMatch] = useState(null)
+  const [drawMode, setDrawMode]     = useState('auto') // 'auto' | 'lottery'
 
   useEffect(() => { fetchAll() }, [id, eventId])
 
@@ -101,6 +104,10 @@ export default function GroupStagePage() {
   function handleMatchSaved(updatedMatch) {
     setMatches(prev => prev.map(m => m.id === updatedMatch.id ? updatedMatch : m))
     setScoreMatch(null)
+  }
+
+  function handleCourtMatchUpdated(updatedMatch) {
+    setMatches(prev => prev.map(m => m.id === updatedMatch.id ? updatedMatch : m))
   }
 
   // Scoring rule for the currently open match (uses event config when available)
@@ -198,21 +205,58 @@ export default function GroupStagePage() {
         </div>
       </div>
 
-      {/* ── Phase A: No groups → Randomizer ── */}
+      {/* ── Phase A: No groups → Randomizer or Lottery ── */}
       {!hasGroups && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
-            <div>
-              <h2 className="text-base font-bold text-gray-900">Phân bảng ngẫu nhiên</h2>
-              <p className="text-sm text-gray-500">Đảm bảo không trùng CLB trong cùng bảng</p>
+          {/* Header + mode toggle */}
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Phân bảng</h2>
+                <p className="text-sm text-gray-500">Đảm bảo không trùng CLB trong cùng bảng</p>
+              </div>
             </div>
+
+            {/* Mode toggle — only show when players exist */}
+            {players.length > 0 && (
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 shrink-0">
+                <button
+                  onClick={() => setDrawMode('auto')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    drawMode === 'auto'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  ⚡ Tự động
+                </button>
+                <button
+                  onClick={() => setDrawMode('lottery')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    drawMode === 'lottery'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  🎰 Bốc thăm
+                </button>
+              </div>
+            )}
           </div>
+
           {players.length === 0 ? (
             <div className="text-center py-12 text-gray-500 text-sm">
               Chưa có VĐV.{' '}
               <Link to={backHref} className="text-blue-600 underline">Import VĐV trước</Link>
             </div>
+          ) : drawMode === 'lottery' ? (
+            <DrawLottery
+              tournament={tournament}
+              event={event}
+              players={players}
+              onConfirmed={fetchAll}
+            />
           ) : (
             <GroupRandomizer
               tournament={tournament}
@@ -235,12 +279,12 @@ export default function GroupStagePage() {
                 <div className="flex min-w-max">
                   {enrichedGroups.map((g, idx) => {
                     const label  = String.fromCharCode(65 + idx)
-                    const active = idx === selectedGroupIdx
+                    const active = activeTab.type === 'group' && activeTab.idx === idx
                     const done   = g.completed === g.total && g.total > 0
                     return (
                       <button
                         key={g.id}
-                        onClick={() => setSelectedGroupIdx(idx)}
+                        onClick={() => setActiveTab({ type: 'group', idx })}
                         className={`flex flex-col items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                           active
                             ? 'border-blue-600 text-blue-600 bg-blue-50'
@@ -254,6 +298,21 @@ export default function GroupStagePage() {
                       </button>
                     )
                   })}
+
+                  {/* Courts tab */}
+                  <button
+                    onClick={() => setActiveTab({ type: 'courts' })}
+                    className={`flex flex-col items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab.type === 'courts'
+                        ? 'border-blue-600 text-blue-600 bg-blue-50'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1"><Grid className="w-3.5 h-3.5" />Sân đấu</span>
+                    <span className="text-xs mt-0.5 text-gray-400">
+                      {event?.num_courts ?? 2} sân
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -271,13 +330,23 @@ export default function GroupStagePage() {
               )}
             </div>
 
-            {enrichedGroups[selectedGroupIdx] && (
+            {activeTab.type === 'group' && enrichedGroups[activeTab.idx] && (
               <GroupView
-                group={enrichedGroups[selectedGroupIdx]}
-                groupIdx={selectedGroupIdx}
+                group={enrichedGroups[activeTab.idx]}
+                groupIdx={activeTab.idx}
                 playerMap={playerMap}
                 onMatchClick={setScoreMatch}
                 attendanceEnabled={event?.attendance_enabled ?? false}
+              />
+            )}
+            {activeTab.type === 'courts' && (
+              <CourtBoard
+                event={event}
+                matches={matches}
+                playerMap={playerMap}
+                scoringRules={scoringRules}
+                onMatchUpdated={handleCourtMatchUpdated}
+                onRefresh={fetchAll}
               />
             )}
           </div>
@@ -300,6 +369,7 @@ export default function GroupStagePage() {
           player1Name={playerMap[scoreMatch.player1_id]?.name ?? '?'}
           player2Name={playerMap[scoreMatch.player2_id]?.name ?? '?'}
           scoringRules={scoringRules}
+          numCourts={event?.num_courts}
           onClose={() => setScoreMatch(null)}
           onSaved={handleMatchSaved}
         />

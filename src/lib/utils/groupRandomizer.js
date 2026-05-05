@@ -73,6 +73,40 @@ function resolveConflicts(groups) {
 }
 
 /**
+ * Pick the best group index for a single player during a lottery draw.
+ * Respects club constraint (soft) and balances group sizes.
+ *
+ * @param {Object}   player        - { id, name, club }
+ * @param {Array}    currentGroups - current draft: Array of player arrays
+ * @param {number}   maxGroupSize  - ceil(totalPlayers / numGroups)
+ * @returns {number} group index (0-based)
+ */
+export function pickGroupForPlayer(player, currentGroups, maxGroupSize) {
+  const eligible = currentGroups
+    .map((g, idx) => ({ idx, group: g }))
+    .filter(({ group }) => group.length < maxGroupSize)
+
+  if (eligible.length === 0) {
+    // All groups full — overflow to any smallest group
+    const minLen = Math.min(...currentGroups.map(g => g.length))
+    const pool = currentGroups.map((g, idx) => ({ idx, group: g })).filter(({ group }) => group.length === minLen)
+    return pool[Math.floor(Math.random() * pool.length)].idx
+  }
+
+  // Prefer groups without same club (ignore "Tự do")
+  const noConflict = player.club === 'Tự do' ? eligible : eligible.filter(({ group }) =>
+    !group.some(p => p.club !== 'Tự do' && p.club === player.club)
+  )
+  const pool = noConflict.length > 0 ? noConflict : eligible
+
+  // Among valid pool, prefer groups with fewest members (balance)
+  const minLen = Math.min(...pool.map(({ group }) => group.length))
+  const smallest = pool.filter(({ group }) => group.length === minLen)
+
+  return smallest[Math.floor(Math.random() * smallest.length)].idx
+}
+
+/**
  * Randomize players into groups ensuring no two players from the same club
  * are placed in the same group ("Tự do" players are exempt).
  *

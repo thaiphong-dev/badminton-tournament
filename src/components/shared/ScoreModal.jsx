@@ -13,10 +13,11 @@ import Button from '@/components/ui/Button'
  *  player1Name  – resolved player name
  *  player2Name  – resolved player name
  *  scoringRules – optional event.scoring_rules JSONB; if absent falls back to hardcoded defaults
+ *  numCourts    – number of courts available (for court selector)
  *  onClose      – called when modal dismissed
  *  onSaved      – called with updated match after successful save
  */
-export default function ScoreModal({ match, player1Name, player2Name, scoringRules, onClose, onSaved }) {
+export default function ScoreModal({ match, player1Name, player2Name, scoringRules, numCourts, onClose, onSaved }) {
   // Resolve sets + pointsPerSet from event config (or legacy hardcoded fallback)
   const { sets, pointsPerSet } = scoringRules
     ? getStageScoringRule(scoringRules, match.stage)
@@ -33,6 +34,7 @@ export default function ScoreModal({ match, player1Name, player2Name, scoringRul
 
   const [scores1, setScores1] = useState(() => toSlots(match.player1_scores))
   const [scores2, setScores2] = useState(() => toSlots(match.player2_scores))
+  const [courtNumber, setCourtNumber] = useState(match.court_number ?? null)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const input1Ref = useRef(null)
@@ -84,6 +86,7 @@ export default function ScoreModal({ match, player1Name, player2Name, scoringRul
           winner_id: winnerId,
           status: 'completed',
           completed_at: new Date().toISOString(),
+          ...(courtNumber != null ? { court_number: courtNumber } : {}),
         })
         .eq('id', match.id)
         .select()
@@ -125,6 +128,29 @@ export default function ScoreModal({ match, player1Name, player2Name, scoringRul
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Court selector (when numCourts is provided) */}
+        {numCourts != null && numCourts > 0 && (
+          <div className="px-6 pt-4 pb-0">
+            <p className="text-xs text-gray-500 mb-2">Sân thi đấu</p>
+            <div className="flex gap-2 flex-wrap">
+              {Array.from({ length: numCourts }, (_, i) => i + 1).map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setCourtNumber(courtNumber === n ? null : n)}
+                  className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
+                    courtNumber === n
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  Sân {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Score inputs */}
         <div className="px-6 py-5 space-y-4">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Settings, LayoutList, GitBranch, AlertCircle, CheckCircle,
-  ChevronRight, Loader2, Info, ClipboardList,
+  ChevronRight, Loader2, Info, ClipboardList, Grid,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FORMAT_OPTIONS, FORMAT_LABELS } from '@/lib/constants'
@@ -114,6 +114,7 @@ export default function EventSetup() {
   const [lateFrom, setLateFrom] = useState('semi')
   const [lateSet, setLateSet]   = useState(3)
   const [latePts, setLatePts]   = useState(15)
+  const [numCourts, setNumCourts] = useState(2)
 
   useEffect(() => { fetchData() }, [eventId])
 
@@ -154,6 +155,7 @@ export default function EventSetup() {
     setLateFrom(late?.applies_from ?? 'semi')
     setLateSet(late?.sets ?? 3)
     setLatePts(late?.points_per_set ?? 15)
+    setNumCourts(ev.num_courts ?? 2)
   }
 
   async function handleSave() {
@@ -178,6 +180,7 @@ export default function EventSetup() {
           scoring_rules:             scoringRules,
           require_player_code:       requirePlayerCode,
           attendance_enabled:        attendanceEnabled,
+          num_courts:                Number(numCourts),
         })
         .eq('id', eventId)
       if (err) throw err
@@ -430,6 +433,26 @@ export default function EventSetup() {
               </p>
             </div>
           </label>
+        </Section>
+
+        {/* ── SECTION: Sân đấu ── */}
+        <Section icon={Grid} title="Sân đấu">
+          <div className="flex items-center gap-5">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Số sân thi đấu</p>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={numCourts}
+                onChange={e => { setNumCourts(Math.max(1, Number(e.target.value))); setSaved(false) }}
+                className="w-20 text-center text-sm border-2 border-gray-200 rounded-lg py-1.5 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <p className="text-xs text-gray-400 pt-5">
+              Dùng để lập lịch tự động và hiển thị trên bảng sân đấu
+            </p>
+          </div>
         </Section>
 
         {/* ── Errors / saved ── */}
