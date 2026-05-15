@@ -1,6 +1,51 @@
 import * as XLSX from 'xlsx'
 import { DISCIPLINE_LABELS } from '@/lib/constants'
 
+/**
+ * Export match schedule to Excel.
+ *
+ * @param {Object} tournament
+ * @param {Array}  matches    – match rows with player names joined
+ * @param {Object} [event]    – optional event row
+ */
+export function exportScheduleToExcel(tournament, matches, event = null) {
+  const eventLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
+
+  const rows = [
+    [eventLabel ? `Lịch thi đấu – ${eventLabel}` : `Lịch thi đấu – ${tournament.name}`],
+    [],
+    ['Mã trận', 'Vòng', 'Thời gian', 'Sân', 'VĐV 1', 'VĐV 2', 'Kết quả'],
+  ]
+
+  const sorted = [...matches].sort((a, b) => {
+    if (a.scheduled_time && b.scheduled_time)
+      return new Date(a.scheduled_time) - new Date(b.scheduled_time)
+    return (a.match_number ?? 0) - (b.match_number ?? 0)
+  })
+
+  sorted.forEach(m => {
+    const time   = m.scheduled_time
+      ? new Date(m.scheduled_time).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+      : '–'
+    const p1     = m.player1_name ?? m.player1_id ?? 'TBD'
+    const p2     = m.player2_name ?? m.player2_id ?? 'TBD'
+    const s1     = Array.isArray(m.player1_scores) ? m.player1_scores : []
+    const s2     = Array.isArray(m.player2_scores) ? m.player2_scores : []
+    const score  = s1.length > 0 ? s1.map((v, i) => `${v}-${s2[i] ?? 0}`).join(', ') : ''
+    rows.push([m.match_code ?? m.match_number ?? '', m.stage ?? '', time, m.court_name ?? '', p1, p2, score])
+  })
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 28 }, { wch: 18 }]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Lịch thi đấu')
+
+  const safeTournament = tournament.name.replace(/[\\/:*?"<>|]/g, '_')
+  const safeEvent      = eventLabel ? `_${eventLabel.replace(/[\\/:*?"<>|]/g, '_')}` : ''
+  XLSX.writeFile(wb, `${safeTournament}${safeEvent}_lich.xlsx`)
+}
+
 const STAGE_LABELS = {
   round_of_16: 'Vòng 1/8',
   quarter:     'Tứ kết',

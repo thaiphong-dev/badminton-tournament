@@ -1,18 +1,66 @@
-import { useState, useMemo, useEffect } from 'react'
-import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight, ShieldCheck, PhoneOff, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useBTCRealtime } from '@/lib/hooks/useBTCRealtime'
 import { cn } from '@/lib/utils/cn'
 import { generateSchedule } from '@/lib/utils/courtScheduler'
 import Button from '@/components/ui/Button'
 import ScoreModal from '@/components/shared/ScoreModal'
 
-export default function CourtBoard({ event, matches, playerMap, scoringRules, onMatchUpdated, onRefresh }) {
+export default function CourtBoard({ event, matches, playerMap, scoringRules, onMatchUpdated, onRefresh, umpireMap = {}, onAssignUmpire = null, tournamentId }) {
+  const { profile } = useAuth()
   const numCourts = event?.num_courts ?? 2
 
-  const [scoreMatch, setScoreMatch]           = useState(null)
-  const [schedulePreview, setSchedulePreview] = useState(null)
-  const [applying, setApplying]               = useState(false)
-  const [editingCourtNum, setEditingCourtNum] = useState(null) // which court is in edit mode
+  const [scoreMatch,       setScoreMatch]       = useState(null)
+  const [schedulePreview,  setSchedulePreview]  = useState(null)
+  const [applying,         setApplying]         = useState(false)
+  const [editingCourtNum,  setEditingCourtNum]  = useState(null)
+  const [callingMatchIds,  setCallingMatchIds]  = useState(new Set()) // Set<matchId> — 1 BTC có thể gọi nhiều sân cùng lúc
+  const [toast,            setToast]            = useState(null) // { message, type, id }
+  const [liveStats,        setLiveStats]        = useState({})   // { [matchId]: match_stats row }
+
+  // Box callingMatchIds into ref so useBTCRealtime callback never goes stale
+  const callingRef = useRef(callingMatchIds)
+  useLayoutEffect(() => { callingRef.current = callingMatchIds })
+
+  // Auto-dismiss toast after 4 s — depend on toast object so deps are complete
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  function showToast(message, type = 'success') {
+    setToast({ message, type, id: Date.now() })
+  }
+
+  // ── BTC Realtime ───────────────────────────────────────────────────────────
+
+  const handleStatsUpdate = useCallback((updatedStats) => {
+    if (!updatedStats?.match_id) return
+    setLiveStats(prev => ({ ...prev, [updatedStats.match_id]: updatedStats }))
+  }, [])
+
+  const handleMatchUpdate = useCallback((updatedMatch) => {
+    onMatchUpdated(updatedMatch)
+    const calling = callingRef.current
+
+    if (updatedMatch.status === 'active' && calling.has(updatedMatch.id)) {
+      setCallingMatchIds(prev => { const s = new Set(prev); s.delete(updatedMatch.id); return s })
+      showToast('✓ Trọng tài đã vào sân — Trận đang bắt đầu', 'success')
+    }
+    if (updatedMatch.status === 'pending' && calling.has(updatedMatch.id) && updatedMatch.call_ended_at) {
+      setCallingMatchIds(prev => { const s = new Set(prev); s.delete(updatedMatch.id); return s })
+      showToast('⚠ Trọng tài từ chối — Vui lòng thử lại', 'warning')
+    }
+    if (updatedMatch.status === 'completed') {
+      const label = updatedMatch.match_number ? `Trận ${updatedMatch.match_number}` : 'Trận'
+      showToast(`✓ ${label} đã kết thúc`, 'success')
+    }
+  }, [onMatchUpdated])
+
+  useBTCRealtime(tournamentId, handleMatchUpdate, handleStatsUpdate)
 
   // ── Wave analysis ──────────────────────────────────────────────────────────
   const scheduledMatches = useMemo(
@@ -37,8 +85,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   const [selectedWave, setSelectedWave] = useState(null)
   const effectiveWave = selectedWave ?? activeWave
 
-  // Reset edit mode when switching waves
-  useEffect(() => { setEditingCourtNum(null) }, [effectiveWave])
+  useEffect(() => { setEditingCourtNum(null) }, [effectiveWave]) // eslint-disable-line react-hooks/set-state-in-effect
 
   const courtSlots = useMemo(
     () => Array.from({ length: numCourts }, (_, i) => {
@@ -82,17 +129,54 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
     else console.error('handleAssignToSlot:', error)
   }
 
-  // ── Match score/start handlers ─────────────────────────────────────────────
+  // ── Match start / calling flow ─────────────────────────────────────────────
 
   async function handleStartMatch(match, courtNum) {
-    const { data: updated, error } = await supabase
-      .from('matches')
-      .update({ status: 'active', court_number: courtNum, started_at: new Date().toISOString() })
-      .eq('id', match.id)
-      .select()
-      .single()
-    if (!error) onMatchUpdated(updated)
-    else console.error('handleStartMatch:', error)
+    if (!match.umpire_id) {
+      // No umpire assigned — start immediately as before
+      const { data: updated, error } = await supabase
+        .from('matches')
+        .update({ status: 'active', court_number: courtNum, started_at: new Date().toISOString() })
+        .eq('id', match.id)
+        .select()
+        .single()
+      if (!error) onMatchUpdated(updated)
+      else console.error('handleStartMatch:', error)
+      return
+    }
+
+    // Umpire assigned — use calling flow (nhiều sân có thể gọi cùng lúc)
+    setCallingMatchIds(prev => new Set([...prev, match.id]))
+    const now = new Date().toISOString()
+    const [matchRes] = await Promise.all([
+      supabase.from('matches')
+        .update({ status: 'calling', call_started_at: now, court_number: courtNum })
+        .eq('id', match.id)
+        .select()
+        .single(),
+      supabase.from('match_call_logs').insert({
+        match_id:  match.id,
+        called_by: profile?.id ?? null,
+        umpire_id: match.umpire_id,
+      }),
+    ])
+    if (matchRes.data) onMatchUpdated(matchRes.data)
+    if (matchRes.error) {
+      console.error('handleStartMatch (calling):', matchRes.error)
+      setCallingMatchIds(prev => { const s = new Set(prev); s.delete(match.id); return s })
+    }
+  }
+
+  async function handleCancelCall(matchId) {
+    const now = new Date().toISOString()
+    await Promise.all([
+      supabase.from('matches').update({ status: 'pending', call_ended_at: now }).eq('id', matchId),
+      supabase.from('match_call_logs')
+        .update({ response: 'cancelled', responded_at: now })
+        .eq('match_id', matchId)
+        .is('responded_at', null),
+    ])
+    setCallingMatchIds(prev => { const s = new Set(prev); s.delete(matchId); return s })
   }
 
   function handleMatchSaved(updatedMatch) {
@@ -133,6 +217,21 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   return (
     <div className="space-y-4 p-5">
 
+      {/* ── Toast ── */}
+      {toast && (
+        <div
+          className={cn(
+            'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl text-sm font-semibold flex items-center gap-2 transition-all',
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-amber-500 text-white',
+          )}
+        >
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-1 opacity-70 hover:opacity-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* ── Wave timeline ── */}
       {hasSchedule && (
         <div>
@@ -143,7 +242,6 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Prev wave */}
             <button
               onClick={() => setSelectedWave(allWaves[waveIdx - 1] ?? null)}
               disabled={waveIdx <= 0}
@@ -156,7 +254,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
               {allWaves.map(w => {
                 const wms       = scheduledMatches.filter(m => m.wave_number === w)
                 const done      = wms.every(m => m.status === 'completed')
-                const hasActive = wms.some(m => m.status === 'active')
+                const hasActive = wms.some(m => m.status === 'active' || m.status === 'calling')
                 const isSel     = w === effectiveWave
                 return (
                   <button
@@ -181,7 +279,6 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
               })}
             </div>
 
-            {/* Next wave */}
             <button
               onClick={() => setSelectedWave(allWaves[waveIdx + 1] ?? null)}
               disabled={waveIdx >= allWaves.length - 1}
@@ -200,10 +297,9 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
           style={{ gridTemplateColumns: `repeat(${Math.min(numCourts, 4)}, minmax(0, 1fr))` }}
         >
           {courtSlots.map((match, idx) => {
-            const courtNum       = idx + 1
-            const isEditing      = editingCourtNum === courtNum
-            // Other pending slots (for swap options)
-            const otherPending   = courtSlots
+            const courtNum     = idx + 1
+            const isEditing    = editingCourtNum === courtNum
+            const otherPending = courtSlots
               .map((m, i) => ({ courtNum: i + 1, match: m }))
               .filter(s => s.courtNum !== courtNum && s.match && s.match.status === 'pending')
 
@@ -213,6 +309,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
                 courtNum={courtNum}
                 match={match}
                 playerMap={playerMap}
+                attendanceEnabled={event?.attendance_enabled ?? false}
                 isEditing={isEditing}
                 otherPendingSlots={otherPending}
                 pendingUnscheduled={pendingUnscheduled}
@@ -223,6 +320,11 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
                 onUnschedule={() => match && handleUnschedule(match.id)}
                 onSwapWith={(otherMatch) => match && handleSwapCourts(match, otherMatch)}
                 onAssign={(unscheduledMatch) => handleAssignToSlot(unscheduledMatch.id, courtNum, effectiveWave)}
+                onCancelCall={() => match && handleCancelCall(match.id)}
+                umpireName={match ? (umpireMap[match.umpire_id]?.name ?? null) : null}
+                onAssignUmpire={onAssignUmpire && match ? () => onAssignUmpire(match) : null}
+                callingDisabled={false}
+                matchStats={match ? (liveStats[match.id] ?? null) : null}
               />
             )
           })}
@@ -296,42 +398,54 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
 
 function CourtSlot({
   courtNum, match, playerMap,
-  isEditing, otherPendingSlots, pendingUnscheduled, waveNum,
-  onEditToggle, onStart, onScore, onUnschedule, onSwapWith, onAssign,
+  attendanceEnabled = false,
+  isEditing, otherPendingSlots, pendingUnscheduled,
+  onEditToggle, onStart, onScore, onUnschedule, onSwapWith, onAssign, onCancelCall,
+  umpireName = null, onAssignUmpire = null, callingDisabled = false,
+  matchStats = null,
 }) {
-  const p1       = match ? (playerMap[match.player1_id] ?? { name: '?' }) : null
-  const p2       = match ? (playerMap[match.player2_id] ?? { name: '?' }) : null
-  const isActive = match?.status === 'active'
-  const isDone   = match?.status === 'completed'
+  const p1        = match ? (playerMap[match.player1_id] ?? { name: '?' }) : null
+  const p2        = match ? (playerMap[match.player2_id] ?? { name: '?' }) : null
+  const isActive  = match?.status === 'active'
+  const isDone    = match?.status === 'completed'
   const isPending = match?.status === 'pending'
-  const canEdit  = !isActive && !isDone // pending or empty
+  const isCalling = match?.status === 'calling'
+  const canEdit   = isPending && !isCalling
+
+  const p1Att = attendanceEnabled ? (playerMap[match?.player1_id]?.attendance ?? 'present') : 'present'
+  const p2Att = attendanceEnabled ? (playerMap[match?.player2_id]?.attendance ?? 'present') : 'present'
+  const isAttendanceLocked = attendanceEnabled && isPending && (p1Att === 'pending' || p2Att === 'pending')
 
   return (
     <div className={cn(
       'bg-white border rounded-xl overflow-hidden transition-all',
       isEditing  && 'ring-2 ring-blue-300 border-blue-300',
       isActive   && !isEditing && 'border-orange-300 ring-2 ring-orange-100',
+      isCalling  && !isEditing && 'border-amber-300 ring-2 ring-amber-100',
       isDone     && !isEditing && 'border-green-200',
       !match     && !isEditing && 'border-dashed border-gray-200',
     )}>
       {/* ── Header ── */}
       <div className={cn(
         'px-3 py-2 text-sm font-bold border-b flex items-center gap-1.5',
-        isEditing  && 'bg-blue-500 text-white border-blue-400',
-        !isEditing && isActive   && 'bg-orange-500 text-white border-orange-400',
-        !isEditing && isDone     && 'bg-green-50 text-green-700 border-green-100',
-        !isEditing && !match     && 'bg-gray-50 text-gray-400 border-gray-100',
-        !isEditing && isPending  && 'bg-blue-50 text-blue-700 border-blue-100',
+        isEditing              && 'bg-blue-500 text-white border-blue-400',
+        !isEditing && isActive && 'bg-orange-500 text-white border-orange-400',
+        !isEditing && isCalling && 'bg-amber-500 text-white border-amber-400',
+        !isEditing && isDone   && 'bg-green-50 text-green-700 border-green-100',
+        !isEditing && !match   && 'bg-gray-50 text-gray-400 border-gray-100',
+        !isEditing && isPending && 'bg-blue-50 text-blue-700 border-blue-100',
       )}>
-        {isActive && !isEditing && <span className="w-2 h-2 bg-white rounded-full animate-pulse" />}
+        {(isActive || isCalling) && !isEditing && (
+          <span className="w-2 h-2 bg-white rounded-full animate-pulse shrink-0" />
+        )}
         <span className="flex-1 text-center">
           Sân {courtNum}
-          {isActive && !isEditing && <span className="font-normal text-xs ml-1 opacity-90">● Đang đấu</span>}
-          {isDone   && !isEditing && <span className="font-normal text-xs ml-1 opacity-80">✓ Xong</span>}
-          {isEditing && <span className="font-normal text-xs ml-1 opacity-90">— Đang chỉnh</span>}
+          {isActive   && !isEditing && <span className="font-normal text-xs ml-1 opacity-90">● Đang đấu</span>}
+          {isCalling  && !isEditing && <span className="font-normal text-xs ml-1 opacity-90">📞 Đang kết nối trọng tài</span>}
+          {isDone     && !isEditing && <span className="font-normal text-xs ml-1 opacity-80">✓ Xong</span>}
+          {isEditing               && <span className="font-normal text-xs ml-1 opacity-90">— Đang chỉnh</span>}
         </span>
 
-        {/* Edit toggle button (only for editable courts) */}
         {canEdit && (
           <button
             onClick={onEditToggle}
@@ -349,7 +463,6 @@ function CourtSlot({
       {/* ── Body ── */}
       <div className="p-3">
         {isEditing ? (
-          /* ── EDIT MODE ── */
           <EditPanel
             match={match}
             playerMap={playerMap}
@@ -362,33 +475,172 @@ function CourtSlot({
         ) : !match ? (
           <div className="text-center py-6 text-sm text-gray-300">Trống</div>
         ) : (
-          /* ── NORMAL MODE ── */
           <>
+            {/* Stage badge for final rounds */}
+            {(match.stage === 'final' || match.stage === 'third_place') && (
+              <div className="text-center mb-2">
+                <span className={cn(
+                  'text-xs font-bold px-2 py-0.5 rounded-full',
+                  match.stage === 'final'
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-orange-100 text-orange-700',
+                )}>
+                  {match.stage === 'final' ? '🏆 Chung kết' : '🥉 Tranh hạng 3'}
+                </span>
+              </div>
+            )}
+
+            {/* Players */}
             <div className="space-y-2 mb-3 text-center">
               <PlayerRow name={p1?.name ?? '?'} club={p1?.club} highlight={isDone && match.winner_id === match.player1_id} />
               <div className="text-xs text-gray-300">vs</div>
               <PlayerRow name={p2?.name ?? '?'} club={p2?.club} highlight={isDone && match.winner_id === match.player2_id} />
             </div>
 
-            {isDone ? (
+            {/* Status-specific content */}
+            {isDone && (
               <div className="text-center text-sm font-semibold text-gray-600">
                 {(match.player1_scores ?? []).map((s, i) => `${s}–${(match.player2_scores ?? [])[i] ?? 0}`).join('  ')}
               </div>
-            ) : isActive ? (
-              <button
-                onClick={onScore}
-                className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
-              >
-                Nhập điểm
-              </button>
-            ) : (
-              <button
-                onClick={onStart}
-                className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-              >
-                <Play className="w-3.5 h-3.5" />
-                Bắt đầu
-              </button>
+            )}
+
+            {isActive && (
+              <>
+                {/* Completed set scores */}
+                {(match.current_set ?? 1) > 1 && (match.player1_scores?.length ?? 0) > 0 && (
+                  <div className="w-full gap-3 mb-2">
+                    {(match.player1_scores ?? []).map((s1, i) => (
+                      <div key={i} className="">
+                        <p className="text-center text-xs text-orange-600 font-semibold mb-2">Hiệp {i + 1}</p>
+                        {/* <p className="text-xs font-bold text-gray-600 font-mono">{s1}–{match.player2_scores?.[i] ?? 0}</p> */}
+                        <div className="flex items-center justify-center gap-4 mb-2 py-1.5 rounded-lg bg-orange-50">
+                          <span className="text-2xl font-black font-mono text-cyan-600">{s1}</span>
+                          <span className="text-xs text-gray-400 font-semibold">vs</span>
+                          <span className="text-2xl font-black font-mono text-amber-500">{match.player2_scores?.[i] ?? 0}</span>
+                        </div>  
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Live score */}
+                 {match.current_set > 1 && (
+                  <p className="text-center text-xs text-orange-600 font-semibold mb-2">Hiệp {match.current_set}</p>
+                )}
+                <div className="flex items-center justify-center gap-4 mb-2 py-1.5 rounded-lg bg-orange-50">
+                  <span className="text-2xl font-black font-mono text-cyan-600">{match.live_score_p1 ?? 0}</span>
+                  <span className="text-xs text-gray-400 font-semibold">vs</span>
+                  <span className="text-2xl font-black font-mono text-amber-500">{match.live_score_p2 ?? 0}</span>
+                </div>
+               
+
+                {/* Live stats từ match_stats — chỉ hiện khi có ít nhất 1 chỉ số > 0 */}
+                {matchStats && (() => {
+                  const p1Faults = matchStats.p1_service_faults ?? 0
+                  const p2Faults = matchStats.p2_service_faults ?? 0
+                  const p1Yellow = matchStats.p1_yellow_cards   ?? 0
+                  const p2Yellow = matchStats.p2_yellow_cards   ?? 0
+                  const p1Red    = matchStats.p1_red_cards      ?? 0
+                  const p2Red    = matchStats.p2_red_cards      ?? 0
+                  if (p1Faults + p2Faults + p1Yellow + p2Yellow + p1Red + p2Red === 0) return null
+                  return (
+                    <div className="mb-2 px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-100 space-y-0.5">
+                      {(p1Faults > 0 || p2Faults > 0) && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>Lỗi phát cầu</span>
+                          <span className="font-mono font-semibold">
+                            <span className="text-cyan-600">{p1Faults}</span>
+                            <span className="text-gray-300 mx-1">–</span>
+                            <span className="text-amber-500">{p2Faults}</span>
+                          </span>
+                        </div>
+                      )}
+                      {(p1Yellow > 0 || p2Yellow > 0) && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>🟡 Thẻ vàng</span>
+                          <span className="font-mono font-semibold">
+                            <span className="text-cyan-600">{p1Yellow}</span>
+                            <span className="text-gray-300 mx-1">–</span>
+                            <span className="text-amber-500">{p2Yellow}</span>
+                          </span>
+                        </div>
+                      )}
+                      {(p1Red > 0 || p2Red > 0) && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>🔴 Thẻ đỏ</span>
+                          <span className="font-mono font-semibold">
+                            <span className="text-cyan-600">{p1Red}</span>
+                            <span className="text-gray-300 mx-1">–</span>
+                            <span className="text-amber-500">{p2Red}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                <button
+                  onClick={onScore}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                >
+                  Nhập điểm
+                </button>
+              </>
+            )}
+
+            {isCalling && (
+              <div className="text-center">
+                <p className="text-xs text-amber-600 font-semibold mb-2">Đang chờ trọng tài xác nhận...</p>
+                <button
+                  onClick={onCancelCall}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <PhoneOff className="w-3.5 h-3.5" />
+                  Huỷ kết nối
+                </button>
+              </div>
+            )}
+
+            {isPending && (
+              isAttendanceLocked ? (
+                <div className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg bg-yellow-50 text-yellow-600 border border-yellow-200">
+                  <Clock className="w-3.5 h-3.5" />
+                  Chờ điểm danh VĐV
+                </div>
+              ) : (
+                <button
+                  onClick={onStart}
+                  disabled={callingDisabled}
+                  className={cn(
+                    'w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg transition-colors',
+                    callingDisabled
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700',
+                  )}
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  Bắt đầu
+                </button>
+              )
+            )}
+
+            {/* Umpire row */}
+            {onAssignUmpire && (
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                <span className="flex items-center gap-1 text-xs text-gray-400">
+                  <ShieldCheck className="w-3 h-3" />
+                  {umpireName
+                    ? <span className="text-gray-600 font-medium">{umpireName}</span>
+                    : <span className="italic">Chưa có TT</span>
+                  }
+                </span>
+                <button
+                  onClick={onAssignUmpire}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                >
+                  {umpireName ? 'Đổi' : 'Phân công'}
+                </button>
+              </div>
             )}
           </>
         )}
@@ -397,7 +649,7 @@ function CourtSlot({
   )
 }
 
-// ─── EditPanel — shown inside CourtSlot when isEditing ────────────────────────
+// ─── EditPanel ────────────────────────────────────────────────────────────────
 
 function EditPanel({ match, playerMap, otherPendingSlots, pendingUnscheduled, onUnschedule, onSwapWith, onAssign }) {
   const hasMatch = match != null
@@ -406,18 +658,12 @@ function EditPanel({ match, playerMap, otherPendingSlots, pendingUnscheduled, on
     <div className="space-y-3">
       {hasMatch ? (
         <>
-          {/* Current match reminder */}
           <div className="text-center text-xs text-gray-500 bg-gray-50 rounded-lg py-2 px-3">
-            <span className="font-medium text-gray-700">
-              {playerMap[match.player1_id]?.name ?? '?'}
-            </span>
+            <span className="font-medium text-gray-700">{playerMap[match.player1_id]?.name ?? '?'}</span>
             <span className="text-gray-400 mx-1">vs</span>
-            <span className="font-medium text-gray-700">
-              {playerMap[match.player2_id]?.name ?? '?'}
-            </span>
+            <span className="font-medium text-gray-700">{playerMap[match.player2_id]?.name ?? '?'}</span>
           </div>
 
-          {/* Swap options */}
           {otherPendingSlots.length > 0 && (
             <div>
               <p className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
@@ -437,7 +683,6 @@ function EditPanel({ match, playerMap, otherPendingSlots, pendingUnscheduled, on
             </div>
           )}
 
-          {/* Unschedule */}
           <button
             onClick={onUnschedule}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
@@ -447,7 +692,6 @@ function EditPanel({ match, playerMap, otherPendingSlots, pendingUnscheduled, on
           </button>
         </>
       ) : (
-        /* Empty slot: assign an unscheduled match */
         pendingUnscheduled.length > 0 ? (
           <div>
             <p className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
@@ -543,12 +787,8 @@ function SchedulePreviewModal({ preview, matches, playerMap, numCourts, onApply,
         </div>
 
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-          <Button variant="secondary" onClick={onCancel} className="flex-1" disabled={applying}>
-            Hủy
-          </Button>
-          <Button onClick={onApply} loading={applying} className="flex-1">
-            Áp dụng lịch
-          </Button>
+          <Button variant="secondary" onClick={onCancel} className="flex-1" disabled={applying}>Hủy</Button>
+          <Button onClick={onApply} loading={applying} className="flex-1">Áp dụng lịch</Button>
         </div>
       </div>
     </div>

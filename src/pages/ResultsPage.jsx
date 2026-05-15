@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, startTransition } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Trophy, Crown, Download,
@@ -39,8 +39,6 @@ export default function ResultsPage() {
   const [error, setError]                     = useState(null)
   const [exporting, setExporting]             = useState(false)
 
-  useEffect(() => { fetchAll() }, [id, eventId])
-
   async function fetchAll() {
     setLoading(true)
     setError(null)
@@ -76,6 +74,8 @@ export default function ResultsPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => { startTransition(() => { fetchAll() }) }, [id, eventId])
 
   const playerMap = useMemo(
     () => Object.fromEntries(players.map(p => [p.id, p])),

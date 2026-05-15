@@ -1,0 +1,579 @@
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\components\shared\ScoreModal.jsx
+  235:106  error  '_optional' is defined but never used  no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\components\umpire\IncomingCallOverlay.jsx
+  64:21  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  68:6   warning  React Hook useEffect has a missing dependency: 'incomingCall'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\components\umpire\ScoringScreen.jsx
+    1:31  error  'useRef' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     no-unused-vars
+   92:7   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  90 |     const maxScore = Math.max(currentSetP1, currentSetP2)
+  91 |     if (maxScore === 11 && intervalSetSeen !== setNum) {
+> 92 |       setIntervalSetSeen(setNum)
+     |       ^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  93 |       setShowInterval(true)
+  94 |     }
+  95 |   }, [currentSetP1, currentSetP2, setNum, intervalSetSeen])                                                                                                                                                                 react-hooks/set-state-in-effect
+  103:16  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  101 |   function handleTap(team) {
+  102 |     setFlash(team)
+> 103 |     const id = Date.now()
+      |                ^^^^^^^^^^ Cannot call impure function
+  104 |     setFloatingPoint({ team, id })
+  105 |     setTimeout(() => setFlash(null), 150)
+  106 |     setTimeout(() => setFloatingPoint(curr => curr?.id === id ? null : curr), 1000)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/purity
+  201:10  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  199 |
+  200 |       <div className="umpire-body">
+> 201 |         <SlimActionBtn team={topTeam} />
+      |          ^^^^^^^^^^^^^ This component is created during render
+  202 |         <div style={{ flex: 1 }}>{CourtArea}</div>
+  203 |         <SlimActionBtn team={botTeam} />
+  204 |       </div>
+
+  183 |   )
+  184 |
+> 185 |   const SlimActionBtn = ({ team }) => {
+      |                         ^^^^^^^^^^^^^^^
+> 186 |     return (
+      | ^^^^^^^^^^^^
+> 187 |       <button onPointerDown={() => handleTap(team)} className={`slim-action-btn ${flash === team ? `flash-${team}` : ''}`}>
+      | ^^^^^^^^^^^^
+> 188 |         <span className={`slim-action-btn-text ${team}`}>{`+1`}</span>
+      | ^^^^^^^^^^^^
+> 189 |         {flash === team && <div className={`slim-action-btn-overlay ${team}`} />}
+      | ^^^^^^^^^^^^
+> 190 |       </button>
+      | ^^^^^^^^^^^^
+> 191 |     )
+      | ^^^^^^^^^^^^
+> 192 |   }
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="umpire-container">  react-hooks/static-components
+  203:10  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  201 |         <SlimActionBtn team={topTeam} />
+  202 |         <div style={{ flex: 1 }}>{CourtArea}</div>
+> 203 |         <SlimActionBtn team={botTeam} />
+      |          ^^^^^^^^^^^^^ This component is created during render
+  204 |       </div>
+  205 |
+  206 |       {showMenu && (
+
+  183 |   )
+  184 |
+> 185 |   const SlimActionBtn = ({ team }) => {
+      |                         ^^^^^^^^^^^^^^^
+> 186 |     return (
+      | ^^^^^^^^^^^^
+> 187 |       <button onPointerDown={() => handleTap(team)} className={`slim-action-btn ${flash === team ? `flash-${team}` : ''}`}>
+      | ^^^^^^^^^^^^
+> 188 |         <span className={`slim-action-btn-text ${team}`}>{`+1`}</span>
+      | ^^^^^^^^^^^^
+> 189 |         {flash === team && <div className={`slim-action-btn-overlay ${team}`} />}
+      | ^^^^^^^^^^^^
+> 190 |       </button>
+      | ^^^^^^^^^^^^
+> 191 |     )
+      | ^^^^^^^^^^^^
+> 192 |   }
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="umpire-container">                 react-hooks/static-components
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\AdminDashboard.jsx
+   83:21  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  81 |   }, [])
+  82 |
+> 83 |   useEffect(() => { fetchAll() }, [fetchAll])
+     |                     ^^^^^^^^ Avoid calling setState() directly within an effect
+  84 |
+  85 |   async function handleRoleChange(profileId, newRole) {
+  86 |     const { error: err } = await supabase  react-hooks/set-state-in-effect
+  306:27  error  'Icon' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\AthleteDashboard.jsx
+   24:9   error    'navigate' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       no-unused-vars
+   90:21  error    Error: Cannot access variable before it is declared
+
+`load` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  88 |   const [registerFor, setRegisterFor] = useState(null)
+  89 |
+> 90 |   useEffect(() => { load(page) }, [page, profile.id])
+     |                     ^^^^ `load` accessed before it is declared
+  91 |
+  92 |   async function load(p) {
+  93 |     setLoading(true)
+
+   90 |   useEffect(() => { load(page) }, [page, profile.id])
+   91 |
+>  92 |   async function load(p) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     setLoading(true)
+      | ^^^^^^^^^^^^^^^^^^^^
+>  94 |     const from = (p - 1) * ATHLETE_PAGE_SIZE
+      …
+      | ^^^^^^^^^^^^^^^^^^^^
+> 110 |     setLoading(false)
+      | ^^^^^^^^^^^^^^^^^^^^
+> 111 |   }
+      | ^^^^ `load` is declared here
+  112 |
+  113 |   function handleRegistered() {
+  114 |     setRegisterFor(null)  react-hooks/immutability
+   90:35  warning  React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/exhaustive-deps
+  588:27  error    'Icon' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\AttendancePage.jsx
+   27:21  error    Error: Cannot access variable before it is declared
+
+`fetchData` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  25 |   const [search, setSearch]         = useState('')
+  26 |
+> 27 |   useEffect(() => { fetchData() }, [eventId])
+     |                     ^^^^^^^^^ `fetchData` accessed before it is declared
+  28 |
+  29 |   async function fetchData() {
+  30 |     setLoading(true)
+
+  27 |   useEffect(() => { fetchData() }, [eventId])
+  28 |
+> 29 |   async function fetchData() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 30 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 31 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 53 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 54 |   }
+     | ^^^^ `fetchData` is declared here
+  55 |
+  56 |   // Compute W/O scores based on the event's scoring config.
+  57 |   // Winner gets [pointsPerSet] (×2 sets if best-of-3), loser gets [0] (×2)  react-hooks/immutability
+   27:36  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     react-hooks/exhaustive-deps
+  214:9   error    'nextStep' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         no-unused-vars
+  331:43  error    'idx' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\EventPlayersPage.jsx
+  22:21  error    Error: Cannot access variable before it is declared
+
+`fetchData` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  20 |   const [playerCount, setPlayerCount] = useState(0)
+  21 |
+> 22 |   useEffect(() => { fetchData() }, [eventId])
+     |                     ^^^^^^^^^ `fetchData` accessed before it is declared
+  23 |
+  24 |   async function fetchData() {
+  25 |     setLoading(true)
+
+  22 |   useEffect(() => { fetchData() }, [eventId])
+  23 |
+> 24 |   async function fetchData() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 25 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 26 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 43 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 44 |   }
+     | ^^^^ `fetchData` is declared here
+  45 |
+  46 |   function handleImportComplete(count) {
+  47 |     setPlayerCount(count)  react-hooks/immutability
+  22:36  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\EventSetup.jsx
+   43:26  error    'Icon' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  no-unused-vars
+  119:21  error    Error: Cannot access variable before it is declared
+
+`fetchData` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  117 |   const [numCourts, setNumCourts] = useState(2)
+  118 |
+> 119 |   useEffect(() => { fetchData() }, [eventId])
+      |                     ^^^^^^^^^ `fetchData` accessed before it is declared
+  120 |
+  121 |   async function fetchData() {
+  122 |     setLoading(true)
+
+  119 |   useEffect(() => { fetchData() }, [eventId])
+  120 |
+> 121 |   async function fetchData() {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 122 |     setLoading(true)
+      | ^^^^^^^^^^^^^^^^^^^^
+> 123 |     try {
+      …
+      | ^^^^^^^^^^^^^^^^^^^^
+> 137 |     }
+      | ^^^^^^^^^^^^^^^^^^^^
+> 138 |   }
+      | ^^^^ `fetchData` is declared here
+  139 |
+  140 |   function hydrateForm(ev) {
+  141 |     setFormat(ev.format ?? 'group_then_knockout')  react-hooks/immutability
+  119:36  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\GroupStagePage.jsx
+    6:10  error    'getStageScoringRule' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                                          no-unused-vars
+   45:6   warning  React Hook useEffect has missing dependencies: 'fetchAll' and 'fetchUmpireMap'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  108:9   error    'clubColorMap' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                        no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\Home.jsx
+  28:6   warning  React Hook useEffect has a missing dependency: 'fetchTournaments'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  52:14  error    'err' is defined but never used                                                                                      no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\KnockoutPage.jsx
+   79:6   warning  React Hook useEffect has missing dependencies: 'fetchAll' and 'fetchUmpireMap'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  101:21  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\LoginPage.jsx
+  19:6  warning  React Hook useEffect has a missing dependency: 'navigate'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\RegisterPage.jsx
+   5:10  error    'cn' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                                    no-unused-vars
+  29:6   warning  React Hook useEffect has a missing dependency: 'navigate'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\ResultsPage.jsx
+  42:21  error    Error: Cannot access variable before it is declared
+
+`fetchAll` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  40 |   const [exporting, setExporting]             = useState(false)
+  41 |
+> 42 |   useEffect(() => { fetchAll() }, [id, eventId])
+     |                     ^^^^^^^^ `fetchAll` accessed before it is declared
+  43 |
+  44 |   async function fetchAll() {
+  45 |     setLoading(true)
+
+  42 |   useEffect(() => { fetchAll() }, [id, eventId])
+  43 |
+> 44 |   async function fetchAll() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 45 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 46 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 77 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 78 |   }
+     | ^^^^ `fetchAll` is declared here
+  79 |
+  80 |   const playerMap = useMemo(
+  81 |     () => Object.fromEntries(players.map(p => [p.id, p])),  react-hooks/immutability
+  42:35  warning  React Hook useEffect has a missing dependency: 'fetchAll'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\TournamentOverview.jsx
+  90:6  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\TournamentReportPage.jsx
+   45:5   error    Error: Cannot access variable before it is declared
+
+`fetchData` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  43 |
+  44 |   useEffect(() => {
+> 45 |     fetchData()
+     |     ^^^^^^^^^ `fetchData` accessed before it is declared
+  46 |   }, [id])
+  47 |
+  48 |   async function fetchData() {
+
+  46 |   }, [id])
+  47 |
+> 48 |   async function fetchData() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 49 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 50 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 74 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 75 |   }
+     | ^^^^ `fetchData` is declared here
+  76 |
+  77 |   // ── Overview aggregations ──────────────────────────────────────────────────
+  78 |   const overview = useMemo(() => {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 react-hooks/immutability
+   46:6   warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     react-hooks/exhaustive-deps
+  286:22  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  284 |                   <th className="text-left px-4 py-3">Tên VĐV</th>
+  285 |                   <th className="px-4 py-3 text-right">
+> 286 |                     <ThBtn col="matchCount">Số trận</ThBtn>
+      |                      ^^^^^ This component is created during render
+  287 |                   </th>
+  288 |                   <th className="px-4 py-3 text-right">
+  289 |                     <ThBtn col="serviceFaults">🏸 Lỗi phát</ThBtn>
+
+  190 |   }
+  191 |
+> 192 |   const ThBtn = ({ col, children }) => (
+      |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+> 193 |     <button
+      | ^^^^^^^^^^^
+> 194 |       onClick={() => toggleSort(col)}
+      | ^^^^^^^^^^^
+> 195 |       className="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors"
+      | ^^^^^^^^^^^
+> 196 |     >
+      | ^^^^^^^^^^^
+> 197 |       {children}
+      | ^^^^^^^^^^^
+> 198 |       <SortIcon col={col} />
+      | ^^^^^^^^^^^
+> 199 |     </button>
+      | ^^^^^^^^^^^
+> 200 |   )
+      | ^^^^ The component is created during render here
+  201 |
+  202 |   return (
+  203 |     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">  react-hooks/static-components
+  289:22  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  287 |                   </th>
+  288 |                   <th className="px-4 py-3 text-right">
+> 289 |                     <ThBtn col="serviceFaults">🏸 Lỗi phát</ThBtn>
+      |                      ^^^^^ This component is created during render
+  290 |                   </th>
+  291 |                   <th className="px-4 py-3 text-right">
+  292 |                     <ThBtn col="yellowCards">🟨 Thẻ vàng</ThBtn>
+
+  190 |   }
+  191 |
+> 192 |   const ThBtn = ({ col, children }) => (
+      |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+> 193 |     <button
+      | ^^^^^^^^^^^
+> 194 |       onClick={() => toggleSort(col)}
+      | ^^^^^^^^^^^
+> 195 |       className="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors"
+      | ^^^^^^^^^^^
+> 196 |     >
+      | ^^^^^^^^^^^
+> 197 |       {children}
+      | ^^^^^^^^^^^
+> 198 |       <SortIcon col={col} />
+      | ^^^^^^^^^^^
+> 199 |     </button>
+      | ^^^^^^^^^^^
+> 200 |   )
+      | ^^^^ The component is created during render here
+  201 |
+  202 |   return (
+  203 |     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">                                        react-hooks/static-components
+  292:22  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  290 |                   </th>
+  291 |                   <th className="px-4 py-3 text-right">
+> 292 |                     <ThBtn col="yellowCards">🟨 Thẻ vàng</ThBtn>
+      |                      ^^^^^ This component is created during render
+  293 |                   </th>
+  294 |                   <th className="px-4 py-3 text-right">
+  295 |                     <ThBtn col="redCards">🟥 Thẻ đỏ</ThBtn>
+
+  190 |   }
+  191 |
+> 192 |   const ThBtn = ({ col, children }) => (
+      |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+> 193 |     <button
+      | ^^^^^^^^^^^
+> 194 |       onClick={() => toggleSort(col)}
+      | ^^^^^^^^^^^
+> 195 |       className="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors"
+      | ^^^^^^^^^^^
+> 196 |     >
+      | ^^^^^^^^^^^
+> 197 |       {children}
+      | ^^^^^^^^^^^
+> 198 |       <SortIcon col={col} />
+      | ^^^^^^^^^^^
+> 199 |     </button>
+      | ^^^^^^^^^^^
+> 200 |   )
+      | ^^^^ The component is created during render here
+  201 |
+  202 |   return (
+  203 |     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">                                               react-hooks/static-components
+  295:22  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+  293 |                   </th>
+  294 |                   <th className="px-4 py-3 text-right">
+> 295 |                     <ThBtn col="redCards">🟥 Thẻ đỏ</ThBtn>
+      |                      ^^^^^ This component is created during render
+  296 |                   </th>
+  297 |                 </tr>
+  298 |               </thead>
+
+  190 |   }
+  191 |
+> 192 |   const ThBtn = ({ col, children }) => (
+      |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+> 193 |     <button
+      | ^^^^^^^^^^^
+> 194 |       onClick={() => toggleSort(col)}
+      | ^^^^^^^^^^^
+> 195 |       className="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors"
+      | ^^^^^^^^^^^
+> 196 |     >
+      | ^^^^^^^^^^^
+> 197 |       {children}
+      | ^^^^^^^^^^^
+> 198 |       <SortIcon col={col} />
+      | ^^^^^^^^^^^
+> 199 |     </button>
+      | ^^^^^^^^^^^
+> 200 |   )
+      | ^^^^ The component is created during render here
+  201 |
+  202 |   return (
+  203 |     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">                                                                                                                           react-hooks/static-components
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\TournamentResultsPage.jsx
+  51:21  error    Error: Cannot access variable before it is declared
+
+`fetchAll` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  49 |   const [exporting, setExporting]   = useState(false)
+  50 |
+> 51 |   useEffect(() => { fetchAll() }, [id])
+     |                     ^^^^^^^^ `fetchAll` accessed before it is declared
+  52 |
+  53 |   async function fetchAll() {
+  54 |     setLoading(true)
+
+  51 |   useEffect(() => { fetchAll() }, [id])
+  52 |
+> 53 |   async function fetchAll() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 54 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 55 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 76 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 77 |   }
+     | ^^^^ `fetchAll` is declared here
+  78 |
+  79 |   // ── Per-event derived data ───────────────────────────────────────────────────
+  80 |   const eventsData = useMemo(() => {  react-hooks/immutability
+  51:35  warning  React Hook useEffect has a missing dependency: 'fetchAll'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\TournamentSetup.jsx
+  30:5  error    Error: Cannot access variable before it is declared
+
+`fetchData` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  28 |
+  29 |   useEffect(() => {
+> 30 |     fetchData()
+     |     ^^^^^^^^^ `fetchData` accessed before it is declared
+  31 |   }, [id])
+  32 |
+  33 |   async function fetchData() {
+
+  31 |   }, [id])
+  32 |
+> 33 |   async function fetchData() {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 34 |     setLoading(true)
+     | ^^^^^^^^^^^^^^^^^^^^
+> 35 |     setError(null)
+     …
+     | ^^^^^^^^^^^^^^^^^^^^
+> 53 |     }
+     | ^^^^^^^^^^^^^^^^^^^^
+> 54 |   }
+     | ^^^^ `fetchData` is declared here
+  55 |
+  56 |   function handleImportComplete(count) {
+  57 |     setTotalPlayers(count)  react-hooks/immutability
+  31:6  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/exhaustive-deps
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\UmpirePage.jsx
+   7:10  error  'cn' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 no-unused-vars
+  35:5   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  33 |   useEffect(() => {
+  34 |     if (!profile) return
+> 35 |     setLoadingTmt(true)
+     |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  36 |     supabase
+  37 |       .from('tournament_umpires')
+  38 |       .select('tournament_id, tournaments(id, name, status)')                                                                                                                react-hooks/set-state-in-effect
+  52:5   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  50 |   useEffect(() => {
+  51 |     if (!selectedTmt || !profile) return
+> 52 |     setLoadingMatches(true)
+     |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  53 |     supabase
+  54 |       .from('matches')
+  55 |       .select('id, stage, match_number, status, player1_id, player2_id, player1_scores, player2_scores, winner_id, live_score_p1, live_score_p2, current_set')  react-hooks/set-state-in-effect
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\pages\UnauthorizedPage.jsx
+  3:10  error  'supabase' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+D:\antigravity\claude_code\create_tournament\badminton-tournament\src\store\tournamentStore.js
+  3:48  error  'get' is defined but never used  no-unused-vars
+
+✖ 51 problems (34 errors, 17 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+

@@ -3,10 +3,13 @@ import { useDropzone } from 'react-dropzone'
 import * as XLSX from 'xlsx'
 import {
   Upload, Plus, Trash2, Download, CheckCircle,
-  AlertCircle, FileSpreadsheet, Pencil, X, Check,
+  AlertCircle, FileSpreadsheet, Pencil, X, Check, ExternalLink,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/hooks/useAuth'
 import Button from '@/components/ui/Button'
+import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -27,6 +30,7 @@ export default function PlayerImport({
   requirePlayerCode = false,
   onImportComplete,
 }) {
+  const { profile } = useAuth()
   const isDoubles = ['mens_doubles', 'womens_doubles', 'mixed_doubles'].includes(discipline)
 
   const [players, setPlayers] = useState(
@@ -93,13 +97,13 @@ export default function PlayerImport({
           .map(row => {
             let name
             if (useDoublesColumns) {
-              const p1 = String(row['VĐV 1'] || row['VDV 1'] || '').trim()
-              const p2 = String(row['VĐV 2'] || row['VDV 2'] || '').trim()
+              const p1 = sanitizeAndTrim(String(row['VĐV 1'] || row['VDV 1'] || '').trim(), 100)
+              const p2 = sanitizeAndTrim(String(row['VĐV 2'] || row['VDV 2'] || '').trim(), 100)
               name = p1 && p2 ? `${p1} / ${p2}` : (p1 || p2)
             } else {
-              name = String(row['Tên'] || row['Ten'] || row['Name'] || '').trim()
+              name = sanitizeAndTrim(String(row['Tên'] || row['Ten'] || row['Name'] || '').trim(), 100)
             }
-            const club = String(row['CLB'] || row['Club'] || '').trim() || 'Tự do'
+            const club = sanitizeAndTrim(String(row['CLB'] || row['Club'] || '').trim(), 100) || 'Tự do'
             const player_code = hasCode
               ? String(row['Mã số'] || row['Ma so'] || row['CCCD'] || row['ID'] || '').trim() || null
               : null
@@ -160,8 +164,8 @@ export default function PlayerImport({
 
   // ── Add manually ───────────────────────────────────────────────────────────
   function addPlayer() {
-    const name = newName.trim()
-    const club = newClub.trim()
+    const name = sanitizeAndTrim(newName.trim(), 100)
+    const club = sanitizeAndTrim(newClub.trim(), 100)
     const code = newCode.trim() || null
     const errs = {}
 
@@ -217,10 +221,24 @@ export default function PlayerImport({
 
     setImporting(true)
     try {
+      // Check player limit (ignore RPC errors to avoid blocking on infra issues)
+      const { data: playerCheck } = await supabase.rpc('check_player_limit', {
+        p_creator_id:   profile?.id,
+        p_tournament_id: tournamentId,
+        p_adding_count: newOnes.length,
+      })
+      if (playerCheck?.allowed === false) {
+        setGlobalError(
+          `Gói ${playerCheck.plan_slug ?? 'hiện tại'} chỉ cho phép ${playerCheck.max} VĐV/giải. ` +
+          `Hiện có ${playerCheck.current}, đang thêm ${playerCheck.adding}.`
+        )
+        return
+      }
+
       const { error } = await supabase.from('players').insert(
         newOnes.map(p => ({
-          name:          p.name.trim(),
-          club:          p.club.trim(),
+          name:          sanitizeAndTrim(p.name.trim(), 100),
+          club:          sanitizeAndTrim(p.club.trim(), 100),
           tournament_id: tournamentId,
           ...(eventId ? { event_id: eventId } : {}),
           ...(p.player_code ? { player_code: p.player_code.trim() } : {}),
@@ -337,7 +355,7 @@ export default function PlayerImport({
       {/* Parse error */}
       {parseError && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           {parseError}
         </div>
       )}
@@ -453,9 +471,20 @@ export default function PlayerImport({
 
       {/* ── Feedback ── */}
       {globalError && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          {globalError}
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{globalError}</span>
+          </div>
+          {globalError.includes('chỉ cho phép') && (
+            <Link
+              to="/plans"
+              className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium text-xs mt-2"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Xem các gói dịch vụ để nâng cấp
+            </Link>
+          )}
         </div>
       )}
 

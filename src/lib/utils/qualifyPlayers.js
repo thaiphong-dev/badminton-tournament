@@ -1,11 +1,55 @@
 import { supabase } from '@/lib/supabase'
 
 /**
+ * Pure function: select qualified players from flattened group records.
+ * Extracted for testability — called by getQualifiedPlayers after DB fetch.
+ *
+ * @param {Array}  allRecords - flat list of {player_id, rank, wins, losses, sets_for, sets_against, score_for, score_against, score_diff, group_number}
+ * @param {number} numFirst   - how many rank-1 players to take
+ * @param {number} numSecond  - how many best rank-2 players to take
+ * @returns {Array} qualified players with seed assigned
+ */
+export function selectQualifiedPlayers(allRecords, numFirst, numSecond) {
+  const firstPlace = allRecords
+    .filter(r => r.rank === 1)
+    .sort((a, b) => a.group_number - b.group_number)
+
+  const secondPlace = allRecords
+    .filter(r => r.rank === 2)
+    .map(r => {
+      const matchesPlayed = r.wins + r.losses
+      return {
+        ...r,
+        win_rate:        matchesPlayed > 0 ? r.wins / matchesPlayed : 0,
+        sets_ratio:      (r.sets_for + r.sets_against) > 0
+                           ? r.sets_for / (r.sets_for + r.sets_against)
+                           : 0,
+        score_ratio:     (r.score_for + r.score_against) > 0
+                           ? r.score_for / (r.score_for + r.score_against)
+                           : 0,
+        score_diff_rate: matchesPlayed > 0 ? r.score_diff / matchesPlayed : 0,
+      }
+    })
+    .sort((a, b) => {
+      if (b.win_rate        !== a.win_rate)        return b.win_rate        - a.win_rate
+      if (b.sets_ratio      !== a.sets_ratio)      return b.sets_ratio      - a.sets_ratio
+      if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
+      return b.score_diff_rate - a.score_diff_rate
+    })
+    .slice(0, numSecond)
+
+  return [
+    ...firstPlace.map(p => ({ ...p, seed: p.group_number, qualified_as: 'Nhất bảng' })),
+    ...secondPlace.map((p, i) => ({ ...p, seed: numFirst + i + 1, qualified_as: 'Nhì bảng' })),
+  ]
+}
+
+/**
  * Select qualified players for the knockout stage.
  *
  * Logic:
  *  - Take all rank-1 players (one per group) → numFirst players
- *  - From rank-2 players, sort by points → wins → score_diff DESC and take top numSecond
+ *  - From rank-2 players, sort by win_rate → sets_ratio → score_ratio DESC and take top numSecond
  *  - Assign seeds: first-place seeds = group_number (1-N), second-place seeds = N+1 to N+numSecond
  *
  * @param {string} tournamentId
@@ -65,45 +109,7 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
     }))
   )
 
-  // ── First-place players ────────────────────────────────────────────────────
-  const firstPlace = allRecords
-    .filter(r => r.rank === 1)
-    .sort((a, b) => a.group_number - b.group_number)   // order by group
-
-  // ── Second-place players (best numSecond) ─────────────────────────────────
-  // Use ratios so groups of different sizes are compared fairly (BWF Cách 2).
-  // Tiebreaker order: win_rate → sets_ratio → score_ratio → score_diff_rate
-  const secondPlace = allRecords
-    .filter(r => r.rank === 2)
-    .map(r => {
-      const matchesPlayed = r.wins + r.losses
-      return {
-        ...r,
-        win_rate:        matchesPlayed > 0 ? r.wins / matchesPlayed : 0,
-        sets_ratio:      (r.sets_for + r.sets_against) > 0
-                           ? r.sets_for / (r.sets_for + r.sets_against)
-                           : 0,
-        score_ratio:     (r.score_for + r.score_against) > 0
-                           ? r.score_for / (r.score_for + r.score_against)
-                           : 0,
-        score_diff_rate: matchesPlayed > 0 ? r.score_diff / matchesPlayed : 0,
-      }
-    })
-    .sort((a, b) => {
-      if (b.win_rate        !== a.win_rate)        return b.win_rate        - a.win_rate
-      if (b.sets_ratio      !== a.sets_ratio)      return b.sets_ratio      - a.sets_ratio
-      if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
-      return b.score_diff_rate - a.score_diff_rate
-    })
-    .slice(0, numSecond)
-
-  // ── Assign seeds ──────────────────────────────────────────────────────────
-  const qualified = [
-    ...firstPlace.map(p => ({ ...p, seed: p.group_number, qualified_as: 'Nhất bảng' })),
-    ...secondPlace.map((p, i) => ({ ...p, seed: numFirst + i + 1, qualified_as: 'Nhì bảng' })),
-  ]
-
-  return qualified
+  return selectQualifiedPlayers(allRecords, numFirst, numSecond)
 }
 
 /**

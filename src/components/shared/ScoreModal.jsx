@@ -49,8 +49,6 @@ export default function ScoreModal({ match, player1Name, player2Name, scoringRul
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const numSets = sets
-
   function handleScore(player, setIdx, value) {
     const raw = value.replace(/\D/g, '').slice(0, 2)
     if (player === 1) setScores1(prev => prev.map((v, i) => i === setIdx ? raw : v))
@@ -234,7 +232,7 @@ function PlayerScoreInput({ label, value, onChange, inputRef, onEnter }) {
   )
 }
 
-function SetRow({ setIdx, label, player1Name, player2Name, score1, score2, onChange, inputRef, optional }) {
+function SetRow({ setIdx, label, player1Name, player2Name, score1, score2, onChange, inputRef }) {
   return (
     <div>
       <p className="text-xs text-gray-400 mb-1.5">{label}</p>

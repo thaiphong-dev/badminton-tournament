@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, startTransition } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   Trophy, Crown, Download, AlertCircle, Loader2, ChevronRight,
@@ -48,8 +48,6 @@ export default function TournamentResultsPage() {
   const [error, setError]           = useState(null)
   const [exporting, setExporting]   = useState(false)
 
-  useEffect(() => { fetchAll() }, [id])
-
   async function fetchAll() {
     setLoading(true)
     setError(null)
@@ -75,6 +73,8 @@ export default function TournamentResultsPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => { startTransition(() => { fetchAll() }) }, [id])
 
   // ── Per-event derived data ───────────────────────────────────────────────────
   const eventsData = useMemo(() => {

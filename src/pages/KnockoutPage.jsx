@@ -1,12 +1,15 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useFeatures } from '@/lib/hooks/useFeatures'
 import {
   ArrowLeft, Trophy, Swords, Crown,
   CheckCircle2, Clock, Pencil, Loader2, AlertCircle,
   LayoutList, GitBranch, ChevronRight, ImageDown, ClipboardList,
-  Zap, Dices,
+  Zap, Dices, ShieldCheck, Grid,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useBTCRealtime } from '@/lib/hooks/useBTCRealtime'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { saveKnockoutBracket } from '@/lib/utils/bracketGenerator'
 import { getQualifiedPlayers } from '@/lib/utils/qualifyPlayers'
@@ -17,6 +20,9 @@ import ScoreModal from '@/components/shared/ScoreModal'
 import BracketView from '@/components/knockout/BracketView'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import DrawKnockout from '@/components/knockout/DrawKnockout'
+import CourtBoard from '@/components/courts/CourtBoard'
+import UmpireAssignModal from '@/components/tournament/UmpireAssignModal'
+import RallyLogModal from '@/components/shared/RallyLogModal'
 import { downloadElementAsImage } from '@/lib/utils/downloadImage'
 import { cn } from '@/lib/utils/cn'
 
@@ -37,6 +43,9 @@ const STATUS_BADGE = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function KnockoutPage() {
   const { id, eventId } = useParams()
+  const { profile } = useAuth()
+  const { hasFeature } = useFeatures()
+  const canUseUmpire = profile?.role === 'admin' || hasFeature('umpire_assign')
 
   const [tournament, setTournament]   = useState(null)
   const [event, setEvent]             = useState(null)
@@ -51,6 +60,10 @@ export default function KnockoutPage() {
   const [viewMode, setViewMode]         = useState('list')  // 'list' | 'bracket'
   const [downloading, setDownloading]   = useState(false)
   const bracketRef = useRef(null)
+
+  const [umpireMap, setUmpireMap]       = useState({})   // umpireId → { name, phone }
+  const [assignMatch, setAssignMatch]   = useState(null) // match to assign umpire
+  const [rallyMatch, setRallyMatch]     = useState(null) // match to view rally log
 
   // Lottery draw mode for knockout_only (when no matches yet)
   const [pendingSetup, setPendingSetup] = useState(false)   // true = needs user to choose mode
@@ -67,7 +80,46 @@ export default function KnockoutPage() {
     }
   }
 
-  useEffect(() => { fetchAll() }, [id, eventId])
+  useEffect(() => {
+    fetchAll()
+    fetchUmpireMap()
+  }, [id, eventId])
+
+  // Realtime: cập nhật bracket khi umpire lưu kết quả từ xa
+  const handleRealtimeMatchUpdate = useCallback(async (updatedMatch) => {
+    // Cập nhật local state ngay lập tức
+    setMatches(prev => prev.map(m => m.id === updatedMatch.id ? { ...m, ...updatedMatch } : m))
+
+    if (updatedMatch.status === 'completed') {
+      // Advance winner vào slot kế tiếp trong bracket (giống handleScoreSaved)
+      try {
+        await advanceWinner(updatedMatch)
+      } catch (err) {
+        console.error('[KnockoutPage] advanceWinner error:', err)
+      }
+      // Refetch toàn bộ knockout matches để bracket hiển thị đúng
+      const freshQ = eventId
+        ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+        : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
+      const { data: freshRaw } = await freshQ
+      const fresh = freshRaw ? deduplicateMatches(freshRaw) : null
+      if (fresh) setMatches(fresh)
+    }
+  }, [id, eventId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useBTCRealtime(id, handleRealtimeMatchUpdate)
+
+  async function fetchUmpireMap() {
+    const { data } = await supabase
+      .from('tournament_umpires')
+      .select('umpire_id, profiles!umpire_id(id, name, phone)')
+      .eq('tournament_id', id)
+    const map = {}
+    for (const row of data || []) {
+      if (row.profiles) map[row.umpire_id] = row.profiles
+    }
+    setUmpireMap(map)
+  }
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
   async function fetchAll() {
@@ -107,8 +159,14 @@ export default function KnockoutPage() {
       const deduped      = deduplicateMatches(knockoutMatches)
       const keptIds      = new Set(deduped.map(m => m.id))
       const duplicateIds = knockoutMatches.filter(m => !keptIds.has(m.id)).map(m => m.id)
-      if (duplicateIds.length > 0) {
-        await supabase.from('matches').delete().in('id', duplicateIds)
+      if (duplicateIds.length > 0 && profile?.id && tRes.data.creator_id === profile.id) {
+        await supabase.rpc('delete_duplicate_matches', {
+          p_creator_id:    profile.id,
+          p_tournament_id: id,
+          p_match_ids:     duplicateIds,
+        })
+        knockoutMatches = deduped
+      } else if (duplicateIds.length > 0) {
         knockoutMatches = deduped
       }
 
@@ -517,6 +575,22 @@ export default function KnockoutPage() {
           {viewMode === 'list' && (
             <div className="flex-1 overflow-x-auto">
               <div className="flex min-w-max">
+                {/* Courts tab */}
+                <button
+                  onClick={() => setActiveStage('courts')}
+                  className={cn(
+                    'flex flex-col items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                    activeStage === 'courts'
+                      ? 'border-purple-600 text-purple-600 bg-purple-50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+                  )}
+                >
+                  <span className="flex items-center gap-1"><Grid className="w-3.5 h-3.5" />Sân đấu</span>
+                  <span className="text-xs mt-0.5 text-gray-400">
+                    {event?.num_courts ?? 2} sân
+                  </span>
+                </button>
+
                 {visibleStages.map(stage => {
                   const stageMatches = byStage[stage.key] || []
                   const done  = stageMatches.filter(m => m.status === 'completed').length
@@ -616,14 +690,27 @@ export default function KnockoutPage() {
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className={viewMode === 'bracket' || activeStage === 'courts' ? '' : 'p-6'}>
           {viewMode === 'bracket' ? (
-            <BracketView
+            <div className="p-6">
+              <BracketView
+                matches={matches}
+                playerMap={playerMap}
+                onMatchClick={(m) => { if (!m.is_forfeit) setScoreMatch(m) }}
+                containerRef={bracketRef}
+                tournamentName={tournament?.name}
+              />
+            </div>
+          ) : activeStage === 'courts' ? (
+            <CourtBoard
+              event={event}
               matches={matches}
               playerMap={playerMap}
-              onMatchClick={(m) => { if (!m.is_forfeit) setScoreMatch(m) }}
-              containerRef={bracketRef}
-              tournamentName={tournament?.name}
+              scoringRules={event?.scoring_rules ?? null}
+              onMatchUpdated={m => setMatches(prev => prev.map(p => p.id === m.id ? m : p))}
+              onRefresh={fetchAll}
+              umpireMap={umpireMap}
+              onAssignUmpire={canUseUmpire ? setAssignMatch : null}
             />
           ) : activeStage === 'final' ? (
             <FinalsView
@@ -632,6 +719,9 @@ export default function KnockoutPage() {
               playerMap={playerMap}
               onMatchClick={setScoreMatch}
               attendanceEnabled={event?.attendance_enabled ?? false}
+              umpireMap={umpireMap}
+              onAssignUmpire={canUseUmpire ? setAssignMatch : null}
+              onViewRally={setRallyMatch}
             />
           ) : (
             <StageMatchList
@@ -639,6 +729,9 @@ export default function KnockoutPage() {
               playerMap={playerMap}
               onMatchClick={setScoreMatch}
               attendanceEnabled={event?.attendance_enabled ?? false}
+              umpireMap={umpireMap}
+              onAssignUmpire={canUseUmpire ? setAssignMatch : null}
+              onViewRally={setRallyMatch}
             />
           )}
         </div>
@@ -655,13 +748,42 @@ export default function KnockoutPage() {
           onSaved={handleScoreSaved}
         />
       )}
+
+      {/* Umpire assign modal */}
+      {assignMatch && (
+        <UmpireAssignModal
+          match={{
+            ...assignMatch,
+            player1_name: playerMap[assignMatch.player1_id]?.name,
+            player2_name: playerMap[assignMatch.player2_id]?.name,
+          }}
+          tournamentId={id}
+          onClose={() => setAssignMatch(null)}
+          onAssigned={(matchId, umpireId) => {
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, umpire_id: umpireId } : m))
+            setAssignMatch(null)
+          }}
+        />
+      )}
+
+      {/* Rally log modal */}
+      {rallyMatch && (
+        <RallyLogModal
+          matchId={rallyMatch.id}
+          player1Id={rallyMatch.player1_id}
+          player2Id={rallyMatch.player2_id}
+          player1Name={playerMap[rallyMatch.player1_id]?.name ?? '?'}
+          player2Name={playerMap[rallyMatch.player2_id]?.name ?? '?'}
+          onClose={() => setRallyMatch(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ── StageMatchList ─────────────────────────────────────────────────────────────
 
-function StageMatchList({ matches, playerMap, onMatchClick, attendanceEnabled = false }) {
+function StageMatchList({ matches, playerMap, onMatchClick, attendanceEnabled = false, umpireMap = {}, onAssignUmpire = null, onViewRally = null }) {
   if (matches.length === 0) {
     return <p className="text-center py-12 text-sm text-gray-400">Chưa có dữ liệu cho vòng này.</p>
   }
@@ -676,6 +798,9 @@ function StageMatchList({ matches, playerMap, onMatchClick, attendanceEnabled = 
           playerMap={playerMap}
           onClick={() => onMatchClick(match)}
           attendanceEnabled={attendanceEnabled}
+          umpireName={umpireMap[match.umpire_id]?.name ?? null}
+          onAssignUmpire={onAssignUmpire ? () => onAssignUmpire(match) : null}
+          onViewRally={onViewRally && match.status === 'completed' && match.umpire_id ? () => onViewRally(match) : null}
         />
       ))}
     </div>
@@ -684,20 +809,20 @@ function StageMatchList({ matches, playerMap, onMatchClick, attendanceEnabled = 
 
 // ── FinalsView ────────────────────────────────────────────────────────────────
 
-function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick, attendanceEnabled = false }) {
+function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick, attendanceEnabled = false, umpireMap = {}, onAssignUmpire = null, onViewRally = null }) {
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">🏆 Chung kết</p>
         {finalMatch
-          ? <KnockoutMatchCard match={finalMatch} label="Chung kết" playerMap={playerMap} onClick={() => onMatchClick(finalMatch)} highlight attendanceEnabled={attendanceEnabled} />
+          ? <KnockoutMatchCard match={finalMatch} label="Chung kết" playerMap={playerMap} onClick={() => onMatchClick(finalMatch)} highlight attendanceEnabled={attendanceEnabled} umpireName={umpireMap[finalMatch.umpire_id]?.name ?? null} onAssignUmpire={onAssignUmpire ? () => onAssignUmpire(finalMatch) : null} onViewRally={onViewRally && finalMatch.status === 'completed' && finalMatch.umpire_id ? () => onViewRally(finalMatch) : null} />
           : <EmptyMatchCard label="Chung kết" />
         }
       </div>
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">🥉 Tranh hạng 3</p>
         {thirdMatch
-          ? <KnockoutMatchCard match={thirdMatch} label="Tranh hạng 3" playerMap={playerMap} onClick={() => onMatchClick(thirdMatch)} attendanceEnabled={attendanceEnabled} />
+          ? <KnockoutMatchCard match={thirdMatch} label="Tranh hạng 3" playerMap={playerMap} onClick={() => onMatchClick(thirdMatch)} attendanceEnabled={attendanceEnabled} umpireName={umpireMap[thirdMatch.umpire_id]?.name ?? null} onAssignUmpire={onAssignUmpire ? () => onAssignUmpire(thirdMatch) : null} onViewRally={onViewRally && thirdMatch.status === 'completed' && thirdMatch.umpire_id ? () => onViewRally(thirdMatch) : null} />
           : <EmptyMatchCard label="Tranh hạng 3" />
         }
       </div>
@@ -707,7 +832,7 @@ function FinalsView({ finalMatch, thirdMatch, playerMap, onMatchClick, attendanc
 
 // ── KnockoutMatchCard ─────────────────────────────────────────────────────────
 
-function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false, attendanceEnabled = false }) {
+function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false, attendanceEnabled = false, umpireName = null, onAssignUmpire = null, onViewRally = null }) {
   const p1 = match.player1_id ? (playerMap[match.player1_id] ?? { name: '?', club: '' }) : null
   const p2 = match.player2_id ? (playerMap[match.player2_id] ?? { name: '?', club: '' }) : null
   const done    = match.status === 'completed'
@@ -808,6 +933,52 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
           <span className="text-gray-400">Chờ vòng trước...</span>
         )}
       </div>
+
+      {/* Umpire / rally row */}
+      {(onAssignUmpire || onViewRally) && (
+        <div
+          className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100"
+          onClick={e => e.stopPropagation()}
+        >
+          {onAssignUmpire ? (
+            <>
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <ShieldCheck className="w-3 h-3" />
+                {umpireName
+                  ? <span className="text-gray-600 font-medium">{umpireName}</span>
+                  : <span className="italic">Chưa phân công TT</span>
+                }
+              </span>
+              <div className="flex items-center gap-2">
+                {onViewRally && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onViewRally() }}
+                    className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-0.5 rounded hover:bg-purple-50 transition-colors"
+                  >
+                    Rally
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onAssignUmpire() }}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                >
+                  {umpireName ? 'Đổi TT' : 'Phân công'}
+                </button>
+              </div>
+            </>
+          ) : onViewRally ? (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onViewRally() }}
+              className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-0.5 rounded hover:bg-purple-50 transition-colors"
+            >
+              Xem Rally Log
+            </button>
+          ) : null}
+        </div>
+      )}
     </button>
   )
 }

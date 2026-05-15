@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Settings, LayoutList, GitBranch, AlertCircle, CheckCircle,
@@ -40,7 +40,8 @@ function RadioGroup({ label, options, value, onChange, hint }) {
 }
 
 // ── Section card ──────────────────────────────────────────────────────────────
-function Section({ icon: Icon, title, children }) {
+function Section({ icon, title, children }) {
+  const Icon = icon
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5">
       <div className="flex items-center gap-2 mb-4">
@@ -70,15 +71,18 @@ function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChang
         />
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-400">×</span>
-          <input
-            type="number"
-            min="1"
-            max="99"
-            value={pointsPerSet}
-            onChange={e => onPointsChange(Math.max(1, Number(e.target.value)))}
-            className="w-16 text-center text-sm border-2 border-gray-200 rounded-lg py-1.5 focus:outline-none focus:border-blue-500 transition-colors"
-          />
-          <span className="text-xs text-gray-400">điểm</span>
+          <div className="flex flex-col items-center gap-0.5">
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={pointsPerSet}
+              onChange={e => onPointsChange(Math.max(1, Math.min(99, Number(e.target.value))))}
+              className="w-16 text-center text-sm border-2 border-gray-200 rounded-lg py-1.5 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+            <span className="text-xs text-gray-300" style={{ fontSize: 10 }}>1–99</span>
+          </div>
+          <span className="text-xs text-gray-400">điểm / set</span>
         </div>
       </div>
     </div>
@@ -116,27 +120,6 @@ export default function EventSetup() {
   const [latePts, setLatePts]   = useState(15)
   const [numCourts, setNumCourts] = useState(2)
 
-  useEffect(() => { fetchData() }, [eventId])
-
-  async function fetchData() {
-    setLoading(true)
-    try {
-      const [tRes, eRes] = await Promise.all([
-        supabase.from('tournaments').select('id, name').eq('id', tournamentId).single(),
-        supabase.from('events').select('*').eq('id', eventId).single(),
-      ])
-      if (tRes.error) throw tRes.error
-      if (eRes.error) throw eRes.error
-      setTournament(tRes.data)
-      setEvent(eRes.data)
-      hydrateForm(eRes.data)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   function hydrateForm(ev) {
     setFormat(ev.format ?? 'group_then_knockout')
     setNumGroups(ev.num_groups ?? 4)
@@ -157,6 +140,27 @@ export default function EventSetup() {
     setLatePts(late?.points_per_set ?? 15)
     setNumCourts(ev.num_courts ?? 2)
   }
+
+  async function fetchData() {
+    setLoading(true)
+    try {
+      const [tRes, eRes] = await Promise.all([
+        supabase.from('tournaments').select('id, name').eq('id', tournamentId).single(),
+        supabase.from('events').select('*').eq('id', eventId).single(),
+      ])
+      if (tRes.error) throw tRes.error
+      if (eRes.error) throw eRes.error
+      setTournament(tRes.data)
+      setEvent(eRes.data)
+      hydrateForm(eRes.data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { startTransition(() => { fetchData() }) }, [eventId])
 
   async function handleSave() {
     setSaving(true)

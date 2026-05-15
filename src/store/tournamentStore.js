@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const useTournamentStore = create((set, get) => ({
+export const useTournamentStore = create((set) => ({
   // Current tournament
   tournament: null,
   players: [],

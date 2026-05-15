@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useFeatures } from '@/lib/hooks/useFeatures'
+import FeatureGate from '@/components/ui/FeatureGate'
 import {
   Trophy, Users, ChevronRight, Loader2, Settings, LayoutList,
   GitBranch, Star, AlertCircle, Plus, X, Crown, MapPin, Calendar, ClipboardList,
+  ShieldCheck, UserCheck, Ban,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
@@ -15,6 +19,8 @@ import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
+import UmpireManagement from '@/components/tournament/UmpireManagement'
+import RegistrationReview from '@/components/tournament/RegistrationReview'
 
 // ── Helper: CTA route for an event ───────────────────────────────────────────
 function eventRoute(tournamentId, eventId, status) {
@@ -54,6 +60,8 @@ function eventCTAIcon(status) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function TournamentOverview() {
   const { id } = useParams()
+  const { profile, role } = useAuth()
+  const { hasFeature } = useFeatures()
   const [tournament, setTournament]   = useState(null)
   const [events, setEvents]           = useState([])
   const [matchStatsMap, setMatchStatsMap] = useState({})  // eventId → { total, completed }
@@ -61,6 +69,8 @@ export default function TournamentOverview() {
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [activeTab, setActiveTab]     = useState('events')  // 'events' | 'umpires' | 'registrations'
+  const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
     fetchData(true)
@@ -80,6 +90,16 @@ export default function TournamentOverview() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+  }, [id])
+
+  // Fetch pending registration count for badge
+  useEffect(() => {
+    supabase
+      .from('tournament_registrations')
+      .select('id', { count: 'exact', head: true })
+      .eq('tournament_id', id)
+      .eq('status', 'pending')
+      .then(({ count }) => setPendingCount(count ?? 0))
   }, [id])
 
   async function fetchData(showLoading = true) {
@@ -153,6 +173,13 @@ export default function TournamentOverview() {
   const allDone        = isTournamentComplete(events)
   const usedDisciplines = new Set(events.map(e => e.discipline))
   const canAddEvent    = !allDone && usedDisciplines.size < DISCIPLINE_LIST.length
+  const isCreator      = !!profile && tournament?.creator_id === profile.id
+  const isAdmin        = profile?.role === 'admin'
+  const isSuspended    = !!tournament?.is_suspended
+  const canUseUmpire   = role === 'admin' || hasFeature('umpire_assign')
+
+  // Reset tab if feature access was lost
+  if (activeTab === 'umpires' && !canUseUmpire) setActiveTab('events')
 
   // ── Quick stats ──────────────────────────────────────────────────────────
   const totalMatches     = Object.values(matchStatsMap).reduce((s, v) => s + v.total, 0)
@@ -170,6 +197,35 @@ export default function TournamentOverview() {
           { label: tournament.name },
         ]}
       />
+
+      {/* Suspension banner */}
+      {isSuspended && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+              <Ban className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-red-800 text-sm">Giải đấu đã bị vô hiệu hóa</p>
+              {tournament.suspended_reason ? (
+                <p className="text-sm text-red-600 mt-0.5">{tournament.suspended_reason}</p>
+              ) : (
+                <p className="text-sm text-red-500 mt-0.5">Vi phạm điều khoản sử dụng.</p>
+              )}
+              {!isAdmin && (
+                <p className="text-xs text-red-400 mt-1.5">
+                  Mọi thao tác quản lý giải đấu đã bị tạm khóa. Vui lòng liên hệ admin để được hỗ trợ.
+                </p>
+              )}
+              {isAdmin && (
+                <p className="text-xs text-red-400 mt-1.5">
+                  Bạn đang xem với quyền Admin. Kích hoạt lại từ trang Admin Panel.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Completed banner */}
       {allDone && (
@@ -274,39 +330,129 @@ export default function TournamentOverview() {
         </div>
       )}
 
-      {/* Section header: events + add button */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-gray-900">
-          Nội dung thi đấu ({events.length})
-        </h2>
-        {canAddEvent && (
-          <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4" />
-            Thêm nội dung
-          </Button>
+      {/* Tabs — creator-only tabs hidden from other visitors */}
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('events')}
+          className={cn(
+            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'events'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700',
+          )}
+        >
+          <LayoutList className="w-4 h-4" />
+          Nội dung ({events.length})
+        </button>
+
+        {isCreator && (
+          <>
+            {canUseUmpire && (
+              <button
+                onClick={() => setActiveTab('umpires')}
+                className={cn(
+                  'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                  activeTab === 'umpires'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700',
+                )}
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Trọng tài
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab('registrations')}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                activeTab === 'registrations'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              )}
+            >
+              <UserCheck className="w-4 h-4" />
+              Đăng ký
+              {pendingCount > 0 && (
+                <span className="ml-1 bg-yellow-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                  {pendingCount > 9 ? '9+' : pendingCount}
+                </span>
+              )}
+            </button>
+
+            <Link
+              to={`/tournament/${id}/report`}
+              className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-500 hover:text-green-700 border-b-2 border-transparent -mb-px transition-colors"
+            >
+              📊 Báo cáo
+            </Link>
+          </>
         )}
       </div>
 
-      {/* Events grid */}
-      {events.length === 0 ? (
-        <div className="text-center py-16 bg-white border border-dashed border-gray-300 rounded-2xl">
-          <p className="text-gray-400 text-sm mb-4">Chưa có nội dung thi đấu nào</p>
-          <Button onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4" />
-            Thêm nội dung
-          </Button>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {events.map(event => (
-            <EventCard
-              key={event.id}
-              event={event}
+      {/* Tab: Events */}
+      {activeTab === 'events' && (
+        <>
+          {/* Registration open/close toggle — creator only */}
+          {isCreator && tournament.status !== 'completed' && (
+            <RegistrationToggle
               tournamentId={id}
-              matchStats={matchStatsMap[event.id] ?? null}
-              champion={championMap[event.id] ?? null}
+              isOpen={!!tournament.registration_open}
+              onChange={val => setTournament(prev => ({ ...prev, registration_open: val }))}
             />
-          ))}
+          )}
+
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">
+              Nội dung thi đấu ({events.length})
+            </h2>
+            {isCreator && canAddEvent && !isSuspended && (
+              <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>
+                <Plus className="w-4 h-4" />
+                Thêm nội dung
+              </Button>
+            )}
+          </div>
+
+          {events.length === 0 ? (
+            <div className="text-center py-16 bg-white border border-dashed border-gray-300 rounded-2xl">
+              <p className="text-gray-400 text-sm mb-4">Chưa có nội dung thi đấu nào</p>
+              {isCreator && !isSuspended && (
+                <Button onClick={() => setShowAddModal(true)}>
+                  <Plus className="w-4 h-4" />
+                  Thêm nội dung
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {events.map(event => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  tournamentId={id}
+                  matchStats={matchStatsMap[event.id] ?? null}
+                  champion={championMap[event.id] ?? null}
+                  suspended={isSuspended && !isAdmin}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Tab: Umpires (creator only, feature-gated) */}
+      {isCreator && activeTab === 'umpires' && (
+        <FeatureGate feature="umpire_assign">
+          <div className="bg-white border border-gray-200 rounded-2xl p-6">
+            <UmpireManagement tournamentId={id} />
+          </div>
+        </FeatureGate>
+      )}
+
+      {/* Tab: Registrations (creator only) */}
+      {isCreator && activeTab === 'registrations' && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <RegistrationReview tournamentId={id} />
         </div>
       )}
 
@@ -314,6 +460,7 @@ export default function TournamentOverview() {
       {showAddModal && (
         <AddEventModal
           tournamentId={id}
+          creatorId={profile?.id}
           usedDisciplines={usedDisciplines}
           onClose={() => setShowAddModal(false)}
           onAdded={() => { setShowAddModal(false); fetchData(false) }}
@@ -324,7 +471,7 @@ export default function TournamentOverview() {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ event, tournamentId, matchStats, champion }) {
+function EventCard({ event, tournamentId, matchStats, champion, suspended = false }) {
   const icon     = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const label    = DISCIPLINE_LABELS[event.discipline] ?? event.name
   const ctaHref  = eventRoute(tournamentId, event.id, event.status)
@@ -408,23 +555,73 @@ function EventCard({ event, tournamentId, matchStats, champion }) {
         </div>
 
         {/* CTA */}
-        <Link
-          to={ctaHref}
-          className="flex items-center justify-between w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          <span className="flex items-center gap-1.5">
-            {eventCTAIcon(event.status)}
-            {eventCTA(event.status)}
-          </span>
-          <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
+        {suspended ? (
+          <div className="flex items-center justify-center w-full px-3 py-2 bg-red-50 border border-red-100 text-red-400 rounded-lg text-xs font-medium">
+            <Ban className="w-3.5 h-3.5 mr-1.5" />
+            Đã bị vô hiệu hóa
+          </div>
+        ) : (
+          <Link
+            to={ctaHref}
+            className="flex items-center justify-between w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              {eventCTAIcon(event.status)}
+              {eventCTA(event.status)}
+            </span>
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        )}
       </div>
     </div>
   )
 }
 
+// ── Registration open/close toggle ───────────────────────────────────────────
+function RegistrationToggle({ tournamentId, isOpen, onChange }) {
+  const [saving, setSaving] = useState(false)
+
+  async function toggle() {
+    setSaving(true)
+    const next = !isOpen
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ registration_open: next })
+      .eq('id', tournamentId)
+    if (!error) onChange(next)
+    setSaving(false)
+  }
+
+  return (
+    <div className={cn(
+      'flex items-center justify-between px-4 py-3 rounded-xl border mb-4',
+      isOpen ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200',
+    )}>
+      <div>
+        <p className="text-sm font-semibold text-gray-900">Đăng ký VĐV</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {isOpen ? 'Vận động viên đang có thể gửi đăng ký' : 'Đăng ký hiện đang đóng'}
+        </p>
+      </div>
+      <button
+        onClick={toggle}
+        disabled={saving}
+        className={cn(
+          'relative inline-flex w-11 h-6 rounded-full transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50',
+          isOpen ? 'bg-green-500' : 'bg-gray-300',
+        )}
+      >
+        <span className={cn(
+          'inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out mt-0.5',
+          isOpen ? 'translate-x-5' : 'translate-x-0.5',
+        )} />
+      </button>
+    </div>
+  )
+}
+
 // ── Add Event Modal ───────────────────────────────────────────────────────────
-function AddEventModal({ tournamentId, usedDisciplines, onClose, onAdded }) {
+function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAdded }) {
   const [selected, setSelected] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState(null)
@@ -436,6 +633,20 @@ function AddEventModal({ tournamentId, usedDisciplines, onClose, onAdded }) {
     setSaving(true)
     setError(null)
     try {
+      // Check event limit before inserting
+      const { data: limitCheck } = await supabase.rpc('check_event_limit', {
+        p_creator_id: creatorId,
+        p_tournament_id: tournamentId,
+      })
+      if (limitCheck?.allowed === false) {
+        setError(
+          `Gói ${limitCheck.plan_slug ?? 'hiện tại'} chỉ cho phép ${limitCheck.max} nội dung/giải. ` +
+          `Giải này đã có ${limitCheck.current} nội dung.`
+        )
+        setSaving(false)
+        return
+      }
+
       const disc = DISCIPLINE_LIST.find(d => d.value === selected)
       const { error: err } = await supabase.from('events').insert({
         tournament_id: tournamentId,

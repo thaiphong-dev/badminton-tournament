@@ -1,7 +1,15 @@
-import { CheckCircle2, Clock, Pencil } from 'lucide-react'
+import { CheckCircle2, Clock, Pencil, ShieldCheck, ListOrdered } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
-export default function MatchList({ matches, playerMap, onMatchClick, attendanceEnabled = false }) {
+export default function MatchList({
+  matches,
+  playerMap,
+  onMatchClick,
+  attendanceEnabled = false,
+  umpireMap = {},        // umpireId → { name, phone }
+  onAssignUmpire = null, // fn(match) — if null, hide assign button
+  onViewRally = null,    // fn(match) — if null, hide rally button
+}) {
   if (!matches || matches.length === 0) {
     return <div className="text-center py-8 text-sm text-gray-400">Chưa có trận đấu nào</div>
   }
@@ -29,6 +37,9 @@ export default function MatchList({ matches, playerMap, onMatchClick, attendance
                 playerMap={playerMap}
                 onClick={() => onMatchClick(match)}
                 attendanceEnabled={attendanceEnabled}
+                umpireName={umpireMap[match.umpire_id]?.name ?? null}
+                onAssignUmpire={onAssignUmpire ? () => onAssignUmpire(match) : null}
+                onViewRally={onViewRally && match.status === 'completed' && match.umpire_id ? () => onViewRally(match) : null}
               />
             ))}
           </div>
@@ -38,7 +49,7 @@ export default function MatchList({ matches, playerMap, onMatchClick, attendance
   )
 }
 
-function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
+function MatchCard({ match, playerMap, onClick, attendanceEnabled = false, umpireName = null, onAssignUmpire = null, onViewRally = null }) {
   const p1   = playerMap[match.player1_id] ?? { name: '?', club: '' }
   const p2   = playerMap[match.player2_id] ?? { name: '?', club: '' }
   const done = match.status === 'completed'
@@ -177,6 +188,54 @@ function MatchCard({ match, playerMap, onClick, attendanceEnabled = false }) {
           )}
         </p>
       </div>
+
+      {/* Umpire row */}
+      {(onAssignUmpire || onViewRally) && (
+        <div
+          className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100"
+          onClick={e => e.stopPropagation()}
+        >
+          {onAssignUmpire ? (
+            <>
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <ShieldCheck className="w-3 h-3" />
+                {umpireName
+                  ? <span className="text-gray-600 font-medium">{umpireName}</span>
+                  : <span className="italic">Chưa phân công TT</span>
+                }
+              </span>
+              <div className="flex items-center gap-2">
+                {onViewRally && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onViewRally() }}
+                    className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-0.5 rounded hover:bg-purple-50 transition-colors"
+                  >
+                    <ListOrdered className="w-3 h-3" />
+                    Rally
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onAssignUmpire() }}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                >
+                  {umpireName ? 'Đổi TT' : 'Phân công'}
+                </button>
+              </div>
+            </>
+          ) : onViewRally ? (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onViewRally() }}
+              className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-0.5 rounded hover:bg-purple-50 transition-colors"
+            >
+              <ListOrdered className="w-3 h-3" />
+              Xem Rally Log
+            </button>
+          ) : null}
+        </div>
+      )}
     </button>
   )
 }

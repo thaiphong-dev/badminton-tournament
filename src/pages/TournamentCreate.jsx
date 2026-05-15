@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Trophy, Check, AlertCircle } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Trophy, Check, AlertCircle, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { DISCIPLINE_LIST, DEFAULT_EVENT_SCORING_RULES } from '@/lib/constants'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { cn } from '@/lib/utils/cn'
+import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepIndicator({ current }) {
@@ -43,25 +45,26 @@ function StepIndicator({ current }) {
 }
 
 // ── Discipline card (selectable) ──────────────────────────────────────────────
-function DisciplineCard({ discipline, selected, onToggle }) {
+function DisciplineCard({ discipline, selected, disabled, onToggle }) {
   return (
     <button
       type="button"
-      onClick={() => onToggle(discipline.value)}
+      onClick={() => !disabled && onToggle(discipline.value)}
+      disabled={disabled}
       className={cn(
         'relative w-full text-left p-4 rounded-xl border-2 transition-all focus:outline-none',
         selected
           ? 'border-blue-500 bg-blue-50'
+          : disabled
+          ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
           : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50',
       )}
     >
-      {/* Checkmark badge */}
       {selected && (
         <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
           <Check className="w-3 h-3 text-white" />
         </span>
       )}
-
       <span className="text-2xl mb-2 block leading-none">{discipline.icon}</span>
       <span className={cn(
         'text-sm font-semibold block',
@@ -76,6 +79,7 @@ function DisciplineCard({ discipline, selected, onToggle }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function TournamentCreate() {
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [step, setStep] = useState(1)
 
   // Step 1 fields
@@ -89,8 +93,16 @@ export default function TournamentCreate() {
   const [selected, setSelected] = useState(['mens_singles'])  // at least 1 pre-selected
   const [selectError, setSelectError] = useState(null)
 
+  const [maxEvents, setMaxEvents]  = useState(null) // null = unlimited
   const [loading, setLoading]     = useState(false)
   const [submitError, setSubmitError] = useState(null)
+
+  useEffect(() => {
+    if (!profile?.id) return
+    supabase.rpc('get_creator_plan', { p_creator_id: profile.id }).then(({ data }) => {
+      setMaxEvents(data?.plan?.max_events ?? null)
+    })
+  }, [profile?.id])
 
   // ── Step 1 → Step 2 ────────────────────────────────────────────────────────
   function handleNext() {
@@ -104,9 +116,14 @@ export default function TournamentCreate() {
 
   // ── Discipline toggle ──────────────────────────────────────────────────────
   function toggleDiscipline(value) {
-    setSelected(prev =>
-      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
-    )
+    setSelected(prev => {
+      if (prev.includes(value)) return prev.filter(v => v !== value)
+      if (maxEvents !== null && prev.length >= maxEvents) {
+        setSelectError(`Gói của bạn chỉ cho phép tối đa ${maxEvents} nội dung thi đấu`)
+        return prev
+      }
+      return [...prev, value]
+    })
     setSelectError(null)
   }
 
@@ -116,18 +133,33 @@ export default function TournamentCreate() {
       setSelectError('Vui lòng chọn ít nhất 1 nội dung thi đấu')
       return
     }
+    if (maxEvents !== null && selected.length > maxEvents) {
+      setSelectError(`Gói của bạn chỉ cho phép tối đa ${maxEvents} nội dung thi đấu`)
+      return
+    }
     setLoading(true)
     setSubmitError(null)
     try {
+      // Check tournament limit (ignore RPC errors to avoid blocking on infra issues)
+      const { data: limitCheck } = await supabase.rpc('check_tournament_limit', {
+        p_creator_id: profile?.id,
+      })
+      if (limitCheck?.allowed === false) {
+        setSubmitError(`Gói ${limitCheck.plan_slug ?? 'hiện tại'} chỉ cho phép ${limitCheck.max} giải đấu active. Bạn đang có ${limitCheck.current} giải.`)
+        setLoading(false)
+        return
+      }
+
       // 1. Create tournament
       const { data: tournament, error: tErr } = await supabase
         .from('tournaments')
         .insert({
-          name:     name.trim(),
-          status:   'setup',
-          location: location.trim() || null,
+          name:       sanitizeAndTrim(name, 100),
+          status:     'setup',
+          location:   sanitizeAndTrim(location, 200) || null,
           start_date: startDate || null,
           end_date:   endDate   || null,
+          creator_id: profile?.id ?? null,
         })
         .select()
         .single()
@@ -234,9 +266,15 @@ export default function TournamentCreate() {
               <h2 className="text-sm font-semibold text-gray-700 mb-1">
                 Chọn nội dung thi đấu *
               </h2>
-              <p className="text-xs text-gray-400 mb-4">
+              <p className="text-xs text-gray-400 mb-1">
                 Có thể chọn nhiều nội dung. Mỗi nội dung sẽ được cấu hình riêng ở bước tiếp theo.
               </p>
+              {maxEvents !== null && (
+                <p className="text-xs text-amber-600 mb-3">
+                  Gói hiện tại cho phép tối đa <strong>{maxEvents}</strong> nội dung/giải.{' '}
+                  <Link to="/plans" className="underline">Nâng cấp</Link> để mở thêm.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {DISCIPLINE_LIST.map(d => (
@@ -244,6 +282,7 @@ export default function TournamentCreate() {
                     key={d.value}
                     discipline={d}
                     selected={selected.includes(d.value)}
+                    disabled={maxEvents !== null && !selected.includes(d.value) && selected.length >= maxEvents}
                     onToggle={toggleDiscipline}
                   />
                 ))}
@@ -266,9 +305,20 @@ export default function TournamentCreate() {
             )}
 
             {submitError && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {submitError}
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{submitError}</span>
+                </div>
+                {submitError.includes('chỉ cho phép') && (
+                  <Link
+                    to="/plans"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium text-xs mt-2"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Xem các gói dịch vụ để nâng cấp
+                  </Link>
+                )}
               </div>
             )}
 

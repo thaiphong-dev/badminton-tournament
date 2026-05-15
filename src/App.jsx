@@ -1,16 +1,53 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Header from '@/components/layout/Header'
-import Home from '@/pages/Home'
-import TournamentCreate from '@/pages/TournamentCreate'
-import TournamentOverview from '@/pages/TournamentOverview'
-import TournamentSetup from '@/pages/TournamentSetup'
-import EventSetup from '@/pages/EventSetup'
-import EventPlayersPage from '@/pages/EventPlayersPage'
-import GroupStagePage from '@/pages/GroupStagePage'
-import KnockoutPage from '@/pages/KnockoutPage'
-import ResultsPage from '@/pages/ResultsPage'
+import ProtectedRoute from '@/components/auth/ProtectedRoute'
+import IncomingCallOverlay from '@/components/umpire/IncomingCallOverlay'
+import { useAuth } from '@/lib/hooks/useAuth'
+import useCallStore from '@/lib/stores/callStore'
+
+// Auth pages (standalone, no header)
+import LoginPage       from '@/pages/LoginPage'
+import RegisterPage    from '@/pages/RegisterPage'
+import UnauthorizedPage from '@/pages/UnauthorizedPage'
+
+// Umpire pages (full-screen dark, no header)
+import UmpirePage      from '@/pages/UmpirePage'
+import UmpireMatchPage from '@/pages/UmpireMatchPage'
+
+// Athlete portal
+import AthleteDashboard     from '@/pages/AthleteDashboard'
+import AdminDashboard       from '@/pages/AdminDashboard'
+
+// Main app pages
+import Home                 from '@/pages/Home'
+import TournamentCreate     from '@/pages/TournamentCreate'
+import TournamentOverview   from '@/pages/TournamentOverview'
+import TournamentSetup      from '@/pages/TournamentSetup'
+import EventSetup           from '@/pages/EventSetup'
+import EventPlayersPage     from '@/pages/EventPlayersPage'
+import GroupStagePage       from '@/pages/GroupStagePage'
+import KnockoutPage         from '@/pages/KnockoutPage'
+import ResultsPage          from '@/pages/ResultsPage'
 import TournamentResultsPage from '@/pages/TournamentResultsPage'
-import AttendancePage from '@/pages/AttendancePage'
+import TournamentReportPage  from '@/pages/TournamentReportPage'
+import AttendancePage        from '@/pages/AttendancePage'
+import PlansPage                  from '@/pages/PlansPage'
+import CheckoutPage               from '@/pages/CheckoutPage'
+import CreatorSubscriptionPage    from '@/pages/CreatorSubscriptionPage'
+import AddOnShopPage              from '@/pages/AddOnShopPage'
+import ProfilePage                from '@/pages/ProfilePage'
+import ScoreboardDisplay          from '@/pages/ScoreboardDisplay'
+import PrivacyPage                from '@/pages/PrivacyPage'
+import TermsPage                  from '@/pages/TermsPage'
+import ErrorBoundary              from '@/components/ErrorBoundary'
+import { PlanProvider }           from '@/lib/hooks/usePlan'
+import Toaster                    from '@/components/ui/Toaster'
+import OfflineBanner              from '@/components/ui/OfflineBanner'
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 1000 * 30, refetchOnWindowFocus: true } },
+})
 
 function NotFound() {
   return (
@@ -21,46 +58,165 @@ function NotFound() {
   )
 }
 
+// Các pathname không hiện Header
+const HEADERLESS = ['/login', '/register', '/unauthorized']
+
+function AppShell() {
+  const { pathname } = useLocation()
+  const { role }     = useAuth()
+  const { incomingCall } = useCallStore()
+
+  const isUmpire     = pathname.startsWith('/umpire')
+  const isHeaderless = HEADERLESS.includes(pathname) || isUmpire
+
+  const umpireRoutes = (
+    <>
+      <Route path="/umpire" element={
+        <ProtectedRoute allowedRoles={['umpire']}>
+          <UmpirePage />
+        </ProtectedRoute>
+      } />
+      <Route path="/umpire/match/:matchId" element={
+        <ProtectedRoute allowedRoles={['umpire']}>
+          <UmpireMatchPage />
+        </ProtectedRoute>
+      } />
+    </>
+  )
+
+  return (
+    <>
+      {/* Global incoming-call overlay — renders on any page for umpires */}
+      {role === 'umpire' && incomingCall && !pathname.startsWith('/umpire/match/') && <IncomingCallOverlay />}
+
+      {isHeaderless ? (
+        <Routes>
+          <Route path="/login"        element={<LoginPage />} />
+          <Route path="/register"     element={<RegisterPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          {umpireRoutes}
+        </Routes>
+      ) : (
+        <div className="min-h-screen bg-gray-50">
+          <Header />
+          <main>
+            <Routes>
+              {/* ── Home ── */}
+              <Route path="/" element={<Home />} />
+
+              {/* ── Athlete portal ── */}
+              <Route path="/athlete" element={
+                <ProtectedRoute allowedRoles={['athlete']}>
+                  <AthleteDashboard />
+                </ProtectedRoute>
+              } />
+
+              {/* ── Admin panel ── */}
+              <Route path="/admin" element={
+                <ProtectedRoute allowedRoles={['admin']} strictVerify>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              } />
+
+              {/* ── Plans & Checkout & Subscription ── */}
+              <Route path="/plans" element={<PlansPage />} />
+              <Route path="/creator/subscription" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <CreatorSubscriptionPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/checkout/:planId" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <CheckoutPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/checkout" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <CheckoutPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/addon-shop" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <AddOnShopPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/profile" element={<ProfilePage />} />
+
+              {/* ── Tournament CRUD ── */}
+              <Route path="/tournament/create" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <TournamentCreate />
+                </ProtectedRoute>
+              } />
+
+              {/* ── Tournament Overview ── */}
+              <Route path="/tournament/:id" element={<TournamentOverview />} />
+
+              {/* ── Per-event routes (management = guarded, view = public) ── */}
+              <Route path="/tournament/:id/event/:eventId/setup" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <EventSetup />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/event/:eventId/players" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <EventPlayersPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/event/:eventId/attendance" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <AttendancePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/event/:eventId/groups"   element={<GroupStagePage />} />
+              <Route path="/tournament/:id/event/:eventId/knockout" element={<KnockoutPage />} />
+              <Route path="/tournament/:id/event/:eventId/results"  element={<ResultsPage />} />
+
+              {/* ── Report ── */}
+              <Route path="/tournament/:id/report" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <TournamentReportPage />
+                </ProtectedRoute>
+              } />
+
+              {/* ── Legacy routes ── */}
+              <Route path="/tournament/:id/setup"          element={<TournamentSetup />} />
+              <Route path="/tournament/:id/groups"         element={<GroupStagePage />} />
+              <Route path="/tournament/:id/knockout"       element={<KnockoutPage />} />
+              <Route path="/tournament/:id/results"        element={<TournamentResultsPage />} />
+              <Route path="/tournament/:id/results/legacy" element={<ResultsPage />} />
+
+              {/* ── Public scoreboard display (no auth) ── */}
+              <Route path="/scoreboard/:matchId" element={<ScoreboardDisplay />} />
+
+              {/* ── Legal ── */}
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms"   element={<TermsPage />} />
+
+              {/* ── Umpire (fallback if umpire navigates via URL) ── */}
+              {umpireRoutes}
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <main>
-          <Routes>
-            {/* ── Home ── */}
-            <Route path="/" element={<Home />} />
-
-            {/* ── Tournament CRUD ── */}
-            <Route path="/tournament/create" element={<TournamentCreate />} />
-
-            {/* ── NEW: Tournament Overview (multi-event dashboard) ── */}
-            <Route path="/tournament/:id" element={<TournamentOverview />} />
-
-            {/* ── NEW: Per-event routes ── */}
-            {/* These pages are implemented in upcoming features (I4–I7).
-                They reuse (or wrap) the existing single-event pages,
-                just scoped by eventId instead of the tournament-level status. */}
-            <Route path="/tournament/:id/event/:eventId/setup"    element={<EventSetup />} />
-            <Route path="/tournament/:id/event/:eventId/players"  element={<EventPlayersPage />} />
-            <Route path="/tournament/:id/event/:eventId/attendance" element={<AttendancePage />} />
-            <Route path="/tournament/:id/event/:eventId/groups"   element={<GroupStagePage />} />
-            <Route path="/tournament/:id/event/:eventId/knockout" element={<KnockoutPage />} />
-            <Route path="/tournament/:id/event/:eventId/results"  element={<ResultsPage />} />
-
-            {/* ── Legacy routes (backwards-compat, kept for existing data) ── */}
-            <Route path="/tournament/:id/setup"    element={<TournamentSetup />} />
-            <Route path="/tournament/:id/groups"   element={<GroupStagePage />} />
-            <Route path="/tournament/:id/knockout" element={<KnockoutPage />} />
-            {/* Tournament-level results: multi-event summary page */}
-            <Route path="/tournament/:id/results"  element={<TournamentResultsPage />} />
-            {/* Legacy single-event results (kept for backwards compat) */}
-            <Route path="/tournament/:id/results/legacy" element={<ResultsPage />} />
-
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <PlanProvider>
+            <OfflineBanner />
+            <AppShell />
+            <Toaster />
+          </PlanProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   )
 }

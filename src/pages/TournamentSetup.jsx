@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, startTransition } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Trophy, Users, ChevronRight, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -26,10 +26,6 @@ export default function TournamentSetup() {
   const [error, setError] = useState(null)
   const [totalPlayers, setTotalPlayers] = useState(0)
 
-  useEffect(() => {
-    fetchData()
-  }, [id])
-
   async function fetchData() {
     setLoading(true)
     setError(null)
@@ -52,6 +48,10 @@ export default function TournamentSetup() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    startTransition(() => { fetchData() })
+  }, [id])
 
   function handleImportComplete(count) {
     setTotalPlayers(count)

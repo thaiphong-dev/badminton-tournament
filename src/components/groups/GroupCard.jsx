@@ -13,7 +13,7 @@ const CLUB_COLORS = [
 ]
 
 // Build a stable club→color map from the full player list
-export function buildClubColorMap(allPlayers) {
+export function buildClubColorMap(allPlayers) { // eslint-disable-line react-refresh/only-export-components
   const clubs = [...new Set(allPlayers.map(p => p.club).filter(c => c !== 'Tự do'))]
   return Object.fromEntries(clubs.map((c, i) => [c, CLUB_COLORS[i % CLUB_COLORS.length]]))
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ChevronRight, CheckCircle, AlertCircle, Loader2, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -18,8 +18,6 @@ export default function EventPlayersPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
   const [playerCount, setPlayerCount] = useState(0)
-
-  useEffect(() => { fetchData() }, [eventId])
 
   async function fetchData() {
     setLoading(true)
@@ -42,6 +40,8 @@ export default function EventPlayersPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => { startTransition(() => { fetchData() }) }, [eventId])
 
   function handleImportComplete(count) {
     setPlayerCount(count)

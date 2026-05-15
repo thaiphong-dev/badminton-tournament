@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList, Grid } from 'lucide-react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useFeatures } from '@/lib/hooks/useFeatures'
+import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList, Grid, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
-import { getStageScoringRule } from '@/lib/utils/eventHelpers'
+import { exportScheduleToExcel } from '@/lib/utils/exportResults'
 import { calculateStandings } from '@/lib/utils/standingsCalculator'
-import { buildClubColorMap } from '@/components/groups/GroupCard'
 import Badge from '@/components/ui/Badge'
 import GroupRandomizer from '@/components/groups/GroupRandomizer'
 import DrawLottery from '@/components/groups/DrawLottery'
@@ -15,6 +16,8 @@ import ScoreModal from '@/components/shared/ScoreModal'
 import QualifySection from '@/components/groups/QualifySection'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import CourtBoard from '@/components/courts/CourtBoard'
+import UmpireAssignModal from '@/components/tournament/UmpireAssignModal'
+import RallyLogModal from '@/components/shared/RallyLogModal'
 
 const STATUS_BADGE = {
   setup: 'yellow', group_stage: 'blue', knockout: 'purple', completed: 'green',
@@ -23,6 +26,9 @@ const STATUS_BADGE = {
 export default function GroupStagePage() {
   const { id, eventId } = useParams()   // eventId is undefined on legacy routes
   const navigate = useNavigate()
+  const { role } = useAuth()
+  const { hasFeature } = useFeatures()
+  const canUseUmpire = role === 'admin' || hasFeature('umpire_assign')
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -35,8 +41,26 @@ export default function GroupStagePage() {
   const [activeTab, setActiveTab]   = useState({ type: 'group', idx: 0 })
   const [scoreMatch, setScoreMatch] = useState(null)
   const [drawMode, setDrawMode]     = useState('auto') // 'auto' | 'lottery'
+  const [umpireMap, setUmpireMap]   = useState({})     // umpireId → { name, phone }
+  const [assignMatch, setAssignMatch] = useState(null) // match to assign umpire
+  const [rallyMatch, setRallyMatch]   = useState(null) // match to view rally log
 
-  useEffect(() => { fetchAll() }, [id, eventId])
+  useEffect(() => {
+    fetchAll()
+    fetchUmpireMap()
+  }, [id, eventId])
+
+  async function fetchUmpireMap() {
+    const { data } = await supabase
+      .from('tournament_umpires')
+      .select('umpire_id, profiles!umpire_id(id, name, phone)')
+      .eq('tournament_id', id)
+    const map = {}
+    for (const row of data || []) {
+      if (row.profiles) map[row.umpire_id] = row.profiles
+    }
+    setUmpireMap(map)
+  }
 
   // ── Data fetching ───────────────────────────────────────────────────────────
   async function fetchAll() {
@@ -87,7 +111,6 @@ export default function GroupStagePage() {
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const playerMap    = useMemo(() => Object.fromEntries(players.map(p => [p.id, p])), [players])
-  const clubColorMap = useMemo(() => buildClubColorMap(players), [players])
 
   const enrichedGroups = useMemo(() => {
     return groups.map(g => {
@@ -202,6 +225,15 @@ export default function GroupStagePage() {
               )}
             </div>
           </div>
+          {matches.length > 0 && (
+            <button
+              onClick={() => exportScheduleToExcel(tournament, matches, event)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+              title="Xuất lịch thi đấu ra Excel"
+            >
+              <Download className="w-3.5 h-3.5" /> Xuất lịch
+            </button>
+          )}
         </div>
       </div>
 
@@ -337,6 +369,9 @@ export default function GroupStagePage() {
                 playerMap={playerMap}
                 onMatchClick={setScoreMatch}
                 attendanceEnabled={event?.attendance_enabled ?? false}
+                umpireMap={umpireMap}
+                onAssignUmpire={canUseUmpire ? setAssignMatch : null}
+                onViewRally={setRallyMatch}
               />
             )}
             {activeTab.type === 'courts' && (
@@ -347,6 +382,9 @@ export default function GroupStagePage() {
                 scoringRules={scoringRules}
                 onMatchUpdated={handleCourtMatchUpdated}
                 onRefresh={fetchAll}
+                umpireMap={umpireMap}
+                onAssignUmpire={canUseUmpire ? setAssignMatch : null}
+                tournamentId={id}
               />
             )}
           </div>
@@ -374,13 +412,42 @@ export default function GroupStagePage() {
           onSaved={handleMatchSaved}
         />
       )}
+
+      {/* Umpire assign modal */}
+      {assignMatch && (
+        <UmpireAssignModal
+          match={{
+            ...assignMatch,
+            player1_name: playerMap[assignMatch.player1_id]?.name,
+            player2_name: playerMap[assignMatch.player2_id]?.name,
+          }}
+          tournamentId={id}
+          onClose={() => setAssignMatch(null)}
+          onAssigned={(matchId, umpireId) => {
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, umpire_id: umpireId } : m))
+            setAssignMatch(null)
+          }}
+        />
+      )}
+
+      {/* Rally log modal */}
+      {rallyMatch && (
+        <RallyLogModal
+          matchId={rallyMatch.id}
+          player1Id={rallyMatch.player1_id}
+          player2Id={rallyMatch.player2_id}
+          player1Name={playerMap[rallyMatch.player1_id]?.name ?? '?'}
+          player2Name={playerMap[rallyMatch.player2_id]?.name ?? '?'}
+          onClose={() => setRallyMatch(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ─── GroupView ────────────────────────────────────────────────────────────────
 
-function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled = false }) {
+function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled = false, umpireMap = {}, onAssignUmpire = null, onViewRally = null }) {
   const label    = String.fromCharCode(65 + groupIdx)
   const done     = group.completed === group.total && group.total > 0
   const forfeits = group.matches.filter(m => m.is_forfeit).length
@@ -416,6 +483,9 @@ function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled
             playerMap={playerMap}
             onMatchClick={onMatchClick}
             attendanceEnabled={attendanceEnabled}
+            umpireMap={umpireMap}
+            onAssignUmpire={onAssignUmpire}
+            onViewRally={onViewRally}
           />
         </div>
         <div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   CheckCheck, UserX, UserCheck, GitBranch, LayoutList,
@@ -23,8 +23,6 @@ export default function AttendancePage() {
   const [processing, setProcessing] = useState(null) // playerId being processed
   const [error, setError]           = useState(null)
   const [search, setSearch]         = useState('')
-
-  useEffect(() => { fetchData() }, [eventId])
 
   async function fetchData() {
     setLoading(true)
@@ -52,6 +50,8 @@ export default function AttendancePage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => { startTransition(() => { fetchData() }) }, [eventId])
 
   // Compute W/O scores based on the event's scoring config.
   // Winner gets [pointsPerSet] (×2 sets if best-of-3), loser gets [0] (×2).
@@ -211,8 +211,6 @@ export default function AttendancePage() {
 
   const disciplineIcon  = DISCIPLINE_ICONS[event?.discipline] ?? '🏸'
   const disciplineLabel = DISCIPLINE_LABELS[event?.discipline] ?? event?.name ?? '…'
-  const nextStep        = event?.format === 'knockout_only' ? 'Bracket đấu loại' : 'Phân bảng'
-
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <Breadcrumb
@@ -328,7 +326,7 @@ export default function AttendancePage() {
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {filteredPlayers.map((player, idx) => (
+            {filteredPlayers.map((player) => (
               <PlayerRow
                 key={player.id}
                 player={player}

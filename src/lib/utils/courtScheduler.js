@@ -9,8 +9,14 @@
  * @param {number} startWave  - wave number to start from (default 1)
  * @returns {Array} assignments - [{ id, court_number, wave_number }, ...]
  */
+const FINAL_STAGES = new Set(['final', 'third_place'])
+
 export function generateSchedule(matches, numCourts, startWave = 1) {
-  const unscheduled = [...matches]
+  // final/third_place always go into their own last wave
+  const finalMatches   = matches.filter(m => FINAL_STAGES.has(m.stage))
+  const regularMatches = matches.filter(m => !FINAL_STAGES.has(m.stage))
+
+  const unscheduled = [...regularMatches]
   const assignments = []
   let waveNum = startWave
   let prevWavePlayers = new Set()
@@ -51,6 +57,13 @@ export function generateSchedule(matches, numCourts, startWave = 1) {
 
     prevWavePlayers = usedPlayers
     waveNum++
+  }
+
+  // Place final + third_place together in the last wave (always after all others)
+  if (finalMatches.length > 0) {
+    finalMatches.forEach((match, i) => {
+      assignments.push({ id: match.id, court_number: i + 1, wave_number: waveNum })
+    })
   }
 
   return assignments
