@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, UserPlus, Trash2, Loader2, ShieldCheck, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
 
 export default function UmpireManagement({ tournamentId }) {
-  const [umpires, setUmpires]       = useState([])   // current tournament umpires
-  const [workload, setWorkload]     = useState({})    // umpireId → { total, pending }
+  const { t } = useI18n()
+  const [umpires, setUmpires]       = useState([])
+  const [workload, setWorkload]     = useState({})
   const [query, setQuery]           = useState('')
   const [results, setResults]       = useState([])
   const [searching, setSearching]   = useState(false)
@@ -25,7 +27,6 @@ export default function UmpireManagement({ tournamentId }) {
     const list = (data || []).map(row => row.profiles).filter(Boolean)
     setUmpires(list)
 
-    // fetch match workload for each umpire in this tournament
     if (list.length > 0) {
       const ids = list.map(u => u.id)
       const { data: matches } = await supabase
@@ -50,7 +51,6 @@ export default function UmpireManagement({ tournamentId }) {
 
   useEffect(() => { fetchUmpires() }, [fetchUmpires]) // eslint-disable-line react-hooks/set-state-in-effect
 
-  // Search umpires by name or phone
   useEffect(() => {
     if (!query.trim()) { setResults([]); return } // eslint-disable-line react-hooks/set-state-in-effect
 
@@ -110,14 +110,14 @@ export default function UmpireManagement({ tournamentId }) {
     <div className="space-y-6">
       {/* Search box */}
       <div>
-        <p className="text-sm font-medium text-gray-700 mb-2">Thêm trọng tài</p>
+        <p className="text-sm font-medium text-gray-700 mb-2">{t('umpire.management.addTitle')}</p>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Tìm theo tên hoặc số điện thoại..."
+            placeholder={t('umpire.management.searchPh')}
             className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {searching && (
@@ -146,7 +146,7 @@ export default function UmpireManagement({ tournamentId }) {
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     : <UserPlus className="w-3.5 h-3.5" />
                   }
-                  Thêm
+                  {t('common.add')}
                 </button>
               </div>
             ))}
@@ -154,7 +154,7 @@ export default function UmpireManagement({ tournamentId }) {
         )}
 
         {query.trim() && !searching && results.length === 0 && (
-          <p className="mt-2 text-sm text-gray-400 text-center">Không tìm thấy trọng tài nào.</p>
+          <p className="mt-2 text-sm text-gray-400 text-center">{t('umpire.management.notFound')}</p>
         )}
       </div>
 
@@ -168,7 +168,7 @@ export default function UmpireManagement({ tournamentId }) {
       {/* Current umpires list */}
       <div>
         <p className="text-sm font-medium text-gray-700 mb-3">
-          Trọng tài trong giải ({umpires.length})
+          {t('umpire.management.listTitle', { n: umpires.length })}
         </p>
 
         {loading ? (
@@ -178,7 +178,7 @@ export default function UmpireManagement({ tournamentId }) {
         ) : umpires.length === 0 ? (
           <div className="text-center py-10 border border-dashed border-gray-200 rounded-xl">
             <ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Chưa có trọng tài nào trong giải đấu này.</p>
+            <p className="text-sm text-gray-400">{t('umpire.management.noUmpires')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -205,14 +205,17 @@ export default function UmpireManagement({ tournamentId }) {
                         'text-xs px-2 py-0.5 rounded-full font-medium',
                         wl.pending > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500',
                       )}>
-                        {wl.pending > 0 ? `${wl.pending} trận chờ` : `${wl.total} trận`}
+                        {wl.pending > 0
+                          ? t('umpire.management.pendingMatches', { n: wl.pending })
+                          : t('umpire.management.totalMatches', { n: wl.total })
+                        }
                       </span>
                     )}
                     <button
                       onClick={() => handleRemove(u.id)}
                       disabled={removingId === u.id}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Xóa khỏi giải"
+                      title={t('umpire.management.removeTitle')}
                     >
                       {removingId === u.id
                         ? <Loader2 className="w-4 h-4 animate-spin" />

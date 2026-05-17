@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Clock, AlertCircle, AlertTriangle, CheckCircle, CreditCard, Loader2, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils/cn'
+import { showToast } from '@/lib/hooks/useApiError'
 
 function relativeTime(isoStr) {
   const diffMs = Date.now() - new Date(isoStr).getTime()
@@ -56,6 +57,20 @@ function NotifIcon({ type }) {
       </div>
     )
   }
+  if (type === 'registration_approved') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+        <CheckCircle className="w-4 h-4 text-green-600" />
+      </div>
+    )
+  }
+  if (type === 'registration_rejected') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+        <XCircle className="w-4 h-4 text-red-600" />
+      </div>
+    )
+  }
   return (
     <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
       <Bell className="w-4 h-4 text-gray-500" />
@@ -85,7 +100,23 @@ export default function NotificationBell({ userId, role }) {
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'user_notifications',
         filter: `user_id=eq.${userId}`,
-      }, () => load())
+      }, (payload) => {
+        load()
+        const n = payload.new
+        if (n.type === 'payment_confirmed') {
+          showToast(n.title ?? 'Thanh toán đã được xác nhận!', 'success')
+        } else if (n.type === 'payment_rejected') {
+          showToast(n.title ?? 'Đơn hàng bị từ chối.', 'error')
+        } else if (n.type === 'sub_expired') {
+          showToast(n.title ?? 'Gói của bạn đã hết hạn.', 'error')
+        } else if (n.type === 'sub_expiring_1' || n.type === 'sub_expiring_3' || n.type === 'sub_expiring_7') {
+          showToast(n.title ?? 'Gói của bạn sắp hết hạn.', 'info')
+        } else if (n.type === 'registration_approved') {
+          showToast(n.title ?? 'Đăng ký được chấp thuận!', 'success')
+        } else if (n.type === 'registration_rejected') {
+          showToast(n.title ?? 'Đăng ký không được chấp thuận.', 'error')
+        }
+      })
       .subscribe()
 
     return () => supabase.removeChannel(channel)
@@ -191,10 +222,10 @@ export default function NotificationBell({ userId, role }) {
           {/* Footer */}
           <div className="px-4 py-2.5 border-t border-gray-100 text-center">
             <button
-              onClick={() => { setOpen(false); navigate(role === 'admin' ? '/admin?tab=orders' : '/creator/subscription') }}
+              onClick={() => { setOpen(false); navigate(role === 'admin' ? '/admin?tab=orders' : role === 'athlete' ? '/athlete/registrations' : '/creator/subscription') }}
               className="text-xs text-blue-600 hover:underline"
             >
-              {role === 'admin' ? 'Xem tab Đơn hàng →' : 'Xem trang quản lý gói →'}
+              {role === 'admin' ? 'Xem tab Đơn hàng →' : role === 'athlete' ? 'Xem đăng ký của tôi →' : 'Xem trang quản lý gói →'}
             </button>
           </div>
         </div>

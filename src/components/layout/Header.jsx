@@ -2,15 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Trophy, ChevronDown, LogOut, Shield, User } from 'lucide-react'
 import { useAuth, defaultPathForRole } from '@/lib/hooks/useAuth'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
 import NotificationBell from '@/components/ui/NotificationBell'
-
-const ROLE_LABELS = {
-  admin:   'Admin',
-  creator: 'Creator',
-  athlete: 'Vận động viên',
-  umpire:  'Trọng tài',
-}
+import LanguageSwitcher from '@/components/ui/LanguageSwitcher'
 
 const ROLE_COLORS = {
   admin:   'bg-red-100 text-red-700',
@@ -23,11 +18,11 @@ export default function Header() {
   const location = useLocation()
   const navigate  = useNavigate()
   const { profile, role, signOut } = useAuth()
+  const { t } = useI18n()
 
   const [open, setOpen] = useState(false)
   const dropdownRef = useRef(null)
 
-  // Đóng dropdown khi click ra ngoài
   useEffect(() => {
     function handleClickOutside(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpen(false)
@@ -42,9 +37,8 @@ export default function Header() {
     navigate('/login')
   }
 
-  const navLinks = [{ to: '/', label: 'Trang chủ' }]
+  const navLinks = [{ to: '/', label: t('nav.home') }]
 
-  // Chữ viết tắt từ tên
   const initials = profile?.name
     ? profile.name.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase()
     : '?'
@@ -62,7 +56,7 @@ export default function Header() {
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
       {showExpireWarning && (
         <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-xs text-center py-1.5 px-4">
-          Phiên đăng nhập hết hạn sau {sessionDaysLeft} ngày. Đăng xuất và đăng nhập lại để gia hạn.
+          {t('session.expiresWarning', { days: sessionDaysLeft })}
         </div>
       )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -94,7 +88,7 @@ export default function Header() {
               </Link>
             ))}
 
-            {/* Plans link */}
+            {/* Creator plan links */}
             {role === 'creator' && (
               <>
                 <Link
@@ -106,7 +100,7 @@ export default function Header() {
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50',
                   )}
                 >
-                  Gói của tôi
+                  {t('nav.myPlan')}
                 </Link>
                 <Link
                   to="/addon-shop"
@@ -117,7 +111,7 @@ export default function Header() {
                       : 'text-gray-500 hover:text-gray-700',
                   )}
                 >
-                  Mua thêm
+                  {t('nav.buyMore')}
                 </Link>
                 <Link
                   to="/plans"
@@ -128,7 +122,7 @@ export default function Header() {
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50',
                   )}
                 >
-                  Gói dịch vụ
+                  {t('nav.plans')}
                 </Link>
               </>
             )}
@@ -142,33 +136,37 @@ export default function Header() {
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50',
                 )}
               >
-                Bảng giá
+                {t('nav.pricing')}
               </Link>
             )}
 
-            {/* Notification bell for creator/admin */}
-            {(role === 'creator' || role === 'admin') && profile && (
+            {/* Language switcher */}
+            <div className="ml-1 mr-1">
+              <LanguageSwitcher />
+            </div>
+
+            {/* Notification bell */}
+            {(role === 'creator' || role === 'admin' || role === 'athlete') && profile && (
               <NotificationBell userId={profile.id} role={role} />
             )}
 
-            {/* Creator/Admin: nút tạo giải */}
+            {/* Creator/Admin: create tournament button */}
             {(role === 'creator' || role === 'admin') && (
               <Link
                 to="/tournament/create"
                 className="ml-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
               >
-                + Tạo giải đấu
+                {t('nav.createTournament')}
               </Link>
             )}
 
-            {/* ── User section ── */}
+            {/* User section */}
             {profile ? (
               <div className="relative ml-3" ref={dropdownRef}>
                 <button
                   onClick={() => setOpen(v => !v)}
                   className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  {/* Avatar */}
                   <div className={cn(
                     'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
                     ROLE_COLORS[role] ?? 'bg-gray-100 text-gray-600',
@@ -179,12 +177,11 @@ export default function Header() {
                     <p className="text-sm font-medium text-gray-900 leading-tight max-w-[120px] truncate">
                       {profile.name}
                     </p>
-                    <p className="text-xs text-gray-500">{ROLE_LABELS[role] ?? role}</p>
+                    <p className="text-xs text-gray-500">{t(`role.${role}`) || role}</p>
                   </div>
                   <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', open && 'rotate-180')} />
                 </button>
 
-                {/* Dropdown */}
                 {open && (
                   <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
                     <div className="px-3 py-2 border-b border-gray-100">
@@ -198,7 +195,7 @@ export default function Header() {
                         className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                       >
                         <Shield className="w-4 h-4 text-gray-400" />
-                        Admin Panel
+                        {t('nav.adminPanel')}
                       </Link>
                     )}
                     <Link
@@ -207,14 +204,14 @@ export default function Header() {
                       className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <User className="w-4 h-4 text-gray-400" />
-                      Hồ sơ
+                      {t('nav.profile')}
                     </Link>
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <LogOut className="w-4 h-4 text-gray-400" />
-                      Đăng xuất
+                      {t('nav.logout')}
                     </button>
                   </div>
                 )}
@@ -224,7 +221,7 @@ export default function Header() {
                 to="/login"
                 className="ml-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
               >
-                Đăng nhập
+                {t('nav.login')}
               </Link>
             )}
           </div>

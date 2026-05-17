@@ -38,10 +38,16 @@ import CreatorSubscriptionPage    from '@/pages/CreatorSubscriptionPage'
 import AddOnShopPage              from '@/pages/AddOnShopPage'
 import ProfilePage                from '@/pages/ProfilePage'
 import ScoreboardDisplay          from '@/pages/ScoreboardDisplay'
+import TournamentLivePage         from '@/pages/TournamentLivePage'
+import PlayerStatsPage            from '@/pages/PlayerStatsPage'
+import TournamentCourtsPage       from '@/pages/TournamentCourtsPage'
+import PlayerProfilePage          from '@/pages/PlayerProfilePage'
+import PublicBracketPage          from '@/pages/PublicBracketPage'
 import PrivacyPage                from '@/pages/PrivacyPage'
 import TermsPage                  from '@/pages/TermsPage'
 import ErrorBoundary              from '@/components/ErrorBoundary'
 import { PlanProvider }           from '@/lib/hooks/usePlan'
+import { LangProvider }           from '@/i18n'
 import Toaster                    from '@/components/ui/Toaster'
 import OfflineBanner              from '@/components/ui/OfflineBanner'
 
@@ -179,15 +185,22 @@ function AppShell() {
                 </ProtectedRoute>
               } />
 
-              {/* ── Legacy routes ── */}
+              {/* ── Legacy routes (tournaments without per-event structure) ── */}
+              {/* ResultsPage = chi tiết 1 event (stage-by-stage), dùng ở /event/:eventId/results */}
+              {/* TournamentResultsPage = tổng quan toàn giải (tất cả events), dùng ở /results */}
               <Route path="/tournament/:id/setup"          element={<TournamentSetup />} />
               <Route path="/tournament/:id/groups"         element={<GroupStagePage />} />
               <Route path="/tournament/:id/knockout"       element={<KnockoutPage />} />
               <Route path="/tournament/:id/results"        element={<TournamentResultsPage />} />
               <Route path="/tournament/:id/results/legacy" element={<ResultsPage />} />
 
-              {/* ── Public scoreboard display (no auth) ── */}
-              <Route path="/scoreboard/:matchId" element={<ScoreboardDisplay />} />
+              {/* ── Public pages (no auth) ── */}
+              <Route path="/scoreboard/:matchId"  element={<ScoreboardDisplay />} />
+              <Route path="/tournament/:id/live"   element={<TournamentLivePage />} />
+              <Route path="/tournament/:id/stats"  element={<PlayerStatsPage />} />
+              <Route path="/tournament/:id/courts" element={<TournamentCourtsPage />} />
+              <Route path="/player/:playerId"     element={<PlayerProfilePage />} />
+              <Route path="/tournament/:id/event/:eventId/bracket" element={<PublicBracketPage />} />
 
               {/* ── Legal ── */}
               <Route path="/privacy" element={<PrivacyPage />} />
@@ -210,11 +223,13 @@ export default function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <PlanProvider>
-            <OfflineBanner />
-            <AppShell />
-            <Toaster />
-          </PlanProvider>
+          <LangProvider>
+            <PlanProvider>
+              <OfflineBanner />
+              <AppShell />
+              <Toaster />
+            </PlanProvider>
+          </LangProvider>
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

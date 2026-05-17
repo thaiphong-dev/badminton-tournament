@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFeatures } from '@/lib/hooks/useFeatures'
 import FeatureGate from '@/components/ui/FeatureGate'
 import {
   Trophy, Users, ChevronRight, Loader2, Settings, LayoutList,
   GitBranch, Star, AlertCircle, Plus, X, Crown, MapPin, Calendar, ClipboardList,
-  ShieldCheck, UserCheck, Ban,
+  ShieldCheck, UserCheck, Ban, Copy, TrendingUp, Layers,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   DISCIPLINE_LABELS, DISCIPLINE_ICONS, DISCIPLINE_LIST,
-  EVENT_STATUS_LABELS, EVENT_STATUS_BADGE,
-  STATUS_LABELS,
+  EVENT_STATUS_BADGE,
 } from '@/lib/constants'
 import { isTournamentComplete } from '@/lib/utils/eventHelpers'
+import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
@@ -35,17 +35,6 @@ function eventRoute(tournamentId, eventId, status) {
   }
 }
 
-function eventCTA(status) {
-  switch (status) {
-    case 'setup':       return 'Cấu hình'
-    case 'attendance':  return 'Điểm danh'
-    case 'group_stage': return 'Vòng bảng'
-    case 'knockout':    return 'Knockout'
-    case 'completed':   return 'Kết quả'
-    default:            return 'Xem'
-  }
-}
-
 function eventCTAIcon(status) {
   switch (status) {
     case 'setup':       return <Settings className="w-4 h-4" />
@@ -60,16 +49,19 @@ function eventCTAIcon(status) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function TournamentOverview() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { profile, role } = useAuth()
   const { hasFeature } = useFeatures()
+  const { t } = useI18n()
   const [tournament, setTournament]   = useState(null)
   const [events, setEvents]           = useState([])
-  const [matchStatsMap, setMatchStatsMap] = useState({})  // eventId → { total, completed }
-  const [championMap, setChampionMap] = useState({})      // eventId → playerName
+  const [matchStatsMap, setMatchStatsMap] = useState({})
+  const [championMap, setChampionMap] = useState({})
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [activeTab, setActiveTab]     = useState('events')  // 'events' | 'umpires' | 'registrations'
+  const [showCloneModal, setShowCloneModal] = useState(false)
+  const [activeTab, setActiveTab]     = useState('events')
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
@@ -92,7 +84,6 @@ export default function TournamentOverview() {
     return () => { supabase.removeChannel(channel) }
   }, [id])
 
-  // Fetch pending registration count for badge
   useEffect(() => {
     supabase
       .from('tournament_registrations')
@@ -117,9 +108,8 @@ export default function TournamentOverview() {
       setTournament(tRes.data)
       setEvents(eRes.data || [])
 
-      // ── Build match stats per event ──────────────────────────────────────
       const stats = {}
-      const finalWinners = {}  // eventId → winner_id
+      const finalWinners = {}
       for (const m of mRes.data || []) {
         if (!m.event_id) continue
         if (!stats[m.event_id]) stats[m.event_id] = { total: 0, completed: 0 }
@@ -131,7 +121,6 @@ export default function TournamentOverview() {
       }
       setMatchStatsMap(stats)
 
-      // ── Fetch champion names ─────────────────────────────────────────────
       const winnerIds = [...new Set(Object.values(finalWinners))]
       if (winnerIds.length > 0) {
         const { data: players } = await supabase
@@ -164,8 +153,8 @@ export default function TournamentOverview() {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-        <p className="text-red-600">{error || 'Không tìm thấy giải đấu.'}</p>
-        <Link to="/" className="mt-4 inline-block text-sm text-blue-600 hover:underline">← Trang chủ</Link>
+        <p className="text-red-600">{error || t('overview.notFound')}</p>
+        <Link to="/" className="mt-4 inline-block text-sm text-blue-600 hover:underline">← {t('common.home')}</Link>
       </div>
     )
   }
@@ -178,10 +167,8 @@ export default function TournamentOverview() {
   const isSuspended    = !!tournament?.is_suspended
   const canUseUmpire   = role === 'admin' || hasFeature('umpire_assign')
 
-  // Reset tab if feature access was lost
   if (activeTab === 'umpires' && !canUseUmpire) setActiveTab('events')
 
-  // ── Quick stats ──────────────────────────────────────────────────────────
   const totalMatches     = Object.values(matchStatsMap).reduce((s, v) => s + v.total, 0)
   const completedMatches = Object.values(matchStatsMap).reduce((s, v) => s + v.completed, 0)
   const completedEvents  = events.filter(e => e.status === 'completed').length
@@ -193,7 +180,7 @@ export default function TournamentOverview() {
       <Breadcrumb
         className="mb-6"
         items={[
-          { label: 'Trang chủ', href: '/' },
+          { label: t('common.home'), href: '/' },
           { label: tournament.name },
         ]}
       />
@@ -206,21 +193,17 @@ export default function TournamentOverview() {
               <Ban className="w-5 h-5 text-red-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-red-800 text-sm">Giải đấu đã bị vô hiệu hóa</p>
+              <p className="font-bold text-red-800 text-sm">{t('overview.suspended')}</p>
               {tournament.suspended_reason ? (
                 <p className="text-sm text-red-600 mt-0.5">{tournament.suspended_reason}</p>
               ) : (
-                <p className="text-sm text-red-500 mt-0.5">Vi phạm điều khoản sử dụng.</p>
+                <p className="text-sm text-red-500 mt-0.5">{t('overview.suspendedDefault')}</p>
               )}
               {!isAdmin && (
-                <p className="text-xs text-red-400 mt-1.5">
-                  Mọi thao tác quản lý giải đấu đã bị tạm khóa. Vui lòng liên hệ admin để được hỗ trợ.
-                </p>
+                <p className="text-xs text-red-400 mt-1.5">{t('overview.suspendedHint')}</p>
               )}
               {isAdmin && (
-                <p className="text-xs text-red-400 mt-1.5">
-                  Bạn đang xem với quyền Admin. Kích hoạt lại từ trang Admin Panel.
-                </p>
+                <p className="text-xs text-red-400 mt-1.5">{t('overview.suspendedAdmin')}</p>
               )}
             </div>
           </div>
@@ -233,15 +216,15 @@ export default function TournamentOverview() {
           <div className="flex items-center gap-3">
             <Trophy className="w-6 h-6 text-white shrink-0" />
             <div>
-              <p className="text-white font-bold">🎉 Giải đấu đã kết thúc!</p>
-              <p className="text-yellow-100 text-sm">Tất cả nội dung thi đấu đã tìm ra nhà vô địch</p>
+              <p className="text-white font-bold">{t('overview.completedBanner')}</p>
+              <p className="text-yellow-100 text-sm">{t('overview.completedSubtitle')}</p>
             </div>
           </div>
           <Link
             to={`/tournament/${id}/results`}
             className="shrink-0 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
           >
-            Xem tổng kết <ChevronRight className="w-4 h-4" />
+            {t('overview.viewResults')} <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
       )}
@@ -256,11 +239,10 @@ export default function TournamentOverview() {
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h1 className="text-xl font-bold text-gray-900">{tournament.name}</h1>
               <Badge variant={allDone ? 'green' : tournament.status === 'knockout' ? 'purple' : tournament.status === 'group_stage' ? 'blue' : 'yellow'}>
-                {STATUS_LABELS[tournament.status] || tournament.status}
+                {t('status.' + tournament.status) || tournament.status}
               </Badge>
             </div>
 
-            {/* Meta row */}
             <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-3">
               {tournament.location && (
                 <span className="flex items-center gap-1">
@@ -276,28 +258,64 @@ export default function TournamentOverview() {
               )}
             </div>
 
-            {/* Quick stats */}
             {events.length > 0 && (
               <div className="flex items-center gap-5 text-sm">
                 <span className="text-gray-600">
                   <span className="font-semibold text-gray-900">{completedEvents}</span>
                   <span className="text-gray-400">/{events.length}</span>
-                  <span className="text-gray-500 ml-1">nội dung xong</span>
+                  <span className="text-gray-500 ml-1">{t('overview.eventsCompleted', { done: '', total: '' }).replace('{done}/', '').replace('/{total}', '').trim() || 'events done'}</span>
                 </span>
                 {totalMatches > 0 && (
                   <span className="text-gray-600">
                     <span className="font-semibold text-gray-900">{completedMatches}</span>
                     <span className="text-gray-400">/{totalMatches}</span>
-                    <span className="text-gray-500 ml-1">trận</span>
+                    <span className="text-gray-500 ml-1">{t('live.set') === 'Set' ? 'matches' : 'trận'}</span>
                   </span>
                 )}
               </div>
             )}
+
+            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+              <Link
+                to={`/tournament/${id}/live`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-green-600 hover:text-green-700 hover:bg-green-50 px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+              >
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                {t('overview.liveScoreboard')}
+              </Link>
+              <Link
+                to={`/tournament/${id}/stats`}
+                className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+              >
+                <TrendingUp className="w-3 h-3" />
+                {t('overview.athleteStats')}
+              </Link>
+              {(isCreator || isAdmin) && (
+                <Link
+                  to={`/tournament/${id}/courts`}
+                  className="inline-flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+                >
+                  <Layers className="w-3 h-3" />
+                  {t('overview.manageCourts')}
+                </Link>
+              )}
+              {(isCreator || isAdmin) && (
+                <button
+                  onClick={() => setShowCloneModal(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {t('overview.cloneTournament')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Quick event switcher strip (shown when 2+ active events) */}
+      {/* Quick event switcher strip */}
       {events.filter(e => e.status !== 'setup').length >= 2 && (
         <div className="bg-white border border-gray-200 rounded-xl mb-4 overflow-hidden">
           <div className="overflow-x-auto">
@@ -330,7 +348,7 @@ export default function TournamentOverview() {
         </div>
       )}
 
-      {/* Tabs — creator-only tabs hidden from other visitors */}
+      {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         <button
           onClick={() => setActiveTab('events')}
@@ -342,7 +360,7 @@ export default function TournamentOverview() {
           )}
         >
           <LayoutList className="w-4 h-4" />
-          Nội dung ({events.length})
+          {t('overview.eventsTab', { n: events.length })}
         </button>
 
         {isCreator && (
@@ -358,7 +376,7 @@ export default function TournamentOverview() {
                 )}
               >
                 <ShieldCheck className="w-4 h-4" />
-                Trọng tài
+                {t('overview.umpiresTab')}
               </button>
             )}
             <button
@@ -371,7 +389,7 @@ export default function TournamentOverview() {
               )}
             >
               <UserCheck className="w-4 h-4" />
-              Đăng ký
+              {t('overview.registrationsTab')}
               {pendingCount > 0 && (
                 <span className="ml-1 bg-yellow-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
                   {pendingCount > 9 ? '9+' : pendingCount}
@@ -383,7 +401,7 @@ export default function TournamentOverview() {
               to={`/tournament/${id}/report`}
               className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-500 hover:text-green-700 border-b-2 border-transparent -mb-px transition-colors"
             >
-              📊 Báo cáo
+              {t('overview.reportTab')}
             </Link>
           </>
         )}
@@ -392,34 +410,34 @@ export default function TournamentOverview() {
       {/* Tab: Events */}
       {activeTab === 'events' && (
         <>
-          {/* Registration open/close toggle — creator only */}
           {isCreator && tournament.status !== 'completed' && (
             <RegistrationToggle
               tournamentId={id}
               isOpen={!!tournament.registration_open}
               onChange={val => setTournament(prev => ({ ...prev, registration_open: val }))}
+              t={t}
             />
           )}
 
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-gray-900">
-              Nội dung thi đấu ({events.length})
+              {t('overview.eventsTab', { n: events.length })}
             </h2>
             {isCreator && canAddEvent && !isSuspended && (
               <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>
                 <Plus className="w-4 h-4" />
-                Thêm nội dung
+                {t('overview.addEvent')}
               </Button>
             )}
           </div>
 
           {events.length === 0 ? (
             <div className="text-center py-16 bg-white border border-dashed border-gray-300 rounded-2xl">
-              <p className="text-gray-400 text-sm mb-4">Chưa có nội dung thi đấu nào</p>
+              <p className="text-gray-400 text-sm mb-4">{t('overview.noEvents')}</p>
               {isCreator && !isSuspended && (
                 <Button onClick={() => setShowAddModal(true)}>
                   <Plus className="w-4 h-4" />
-                  Thêm nội dung
+                  {t('overview.addEvent')}
                 </Button>
               )}
             </div>
@@ -433,6 +451,7 @@ export default function TournamentOverview() {
                   matchStats={matchStatsMap[event.id] ?? null}
                   champion={championMap[event.id] ?? null}
                   suspended={isSuspended && !isAdmin}
+                  t={t}
                 />
               ))}
             </div>
@@ -440,7 +459,7 @@ export default function TournamentOverview() {
         </>
       )}
 
-      {/* Tab: Umpires (creator only, feature-gated) */}
+      {/* Tab: Umpires */}
       {isCreator && activeTab === 'umpires' && (
         <FeatureGate feature="umpire_assign">
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
@@ -449,10 +468,10 @@ export default function TournamentOverview() {
         </FeatureGate>
       )}
 
-      {/* Tab: Registrations (creator only) */}
+      {/* Tab: Registrations */}
       {isCreator && activeTab === 'registrations' && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <RegistrationReview tournamentId={id} />
+          <RegistrationReview tournamentId={id} tournamentName={tournament?.name} />
         </div>
       )}
 
@@ -464,6 +483,19 @@ export default function TournamentOverview() {
           usedDisciplines={usedDisciplines}
           onClose={() => setShowAddModal(false)}
           onAdded={() => { setShowAddModal(false); fetchData(false) }}
+          t={t}
+        />
+      )}
+
+      {/* Clone Tournament Modal */}
+      {showCloneModal && (
+        <CloneTournamentModal
+          tournament={tournament}
+          events={events}
+          profile={profile}
+          onClose={() => setShowCloneModal(false)}
+          onCloned={(newId) => navigate(`/tournament/${newId}`)}
+          t={t}
         />
       )}
     </div>
@@ -471,7 +503,7 @@ export default function TournamentOverview() {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ event, tournamentId, matchStats, champion, suspended = false }) {
+function EventCard({ event, tournamentId, matchStats, champion, suspended = false, t }) {
   const icon     = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const label    = DISCIPLINE_LABELS[event.discipline] ?? event.name
   const ctaHref  = eventRoute(tournamentId, event.id, event.status)
@@ -487,24 +519,23 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
     setup:       'bg-gray-200',
   }[event.status] ?? 'bg-gray-200'
 
+  const ctaLabel = t(`overview.cta.${event.status}`) || t('overview.cta.default')
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md hover:border-blue-200 transition-all group">
-      {/* Status strip */}
       <div className={`h-1.5 ${stripColor}`} />
 
       <div className="p-5">
-        {/* Icon + name + badge */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="text-2xl leading-none shrink-0">{icon}</span>
             <p className="font-semibold text-gray-900 text-sm truncate">{label}</p>
           </div>
           <Badge variant={EVENT_STATUS_BADGE[event.status] || 'default'} className="shrink-0">
-            {EVENT_STATUS_LABELS[event.status] || event.status}
+            {t('status.' + event.status) || event.status}
           </Badge>
         </div>
 
-        {/* Champion row */}
         {event.status === 'completed' && champion && (
           <div className="flex items-center gap-1.5 mb-3 bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-1.5">
             <Crown className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
@@ -512,11 +543,10 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
           </div>
         )}
 
-        {/* Progress bar */}
         {progress !== null && event.status !== 'setup' && (
           <div className="mb-3">
             <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-              <span>{matchStats.completed}/{matchStats.total} trận</span>
+              <span>{matchStats.completed}/{matchStats.total} {t('live.set') === 'Set' ? 'matches' : 'trận'}</span>
               <span>{progress}%</span>
             </div>
             <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -531,34 +561,32 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
           </div>
         )}
 
-        {/* Config summary */}
         <div className="flex items-center gap-3 text-xs text-gray-500 mb-4">
           {event.format === 'group_then_knockout' ? (
             <>
               <span className="flex items-center gap-1">
                 <LayoutList className="w-3.5 h-3.5" />
-                {event.num_groups ?? '–'} bảng
+                {t('overview.card.groups', { n: event.num_groups ?? '–' })}
               </span>
               <span className="flex items-center gap-1">
                 <Users className="w-3.5 h-3.5" />
-                {(event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0)} vào knockout
+                {t('overview.card.qualifyKnockout', { n: (event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0) })}
               </span>
             </>
           ) : event.format === 'knockout_only' ? (
             <span className="flex items-center gap-1">
               <GitBranch className="w-3.5 h-3.5" />
-              Loại trực tiếp
+              {t('overview.card.directKnockout')}
             </span>
           ) : (
-            <span className="text-gray-300 italic">Chưa cấu hình</span>
+            <span className="text-gray-300 italic">{t('overview.card.notConfigured')}</span>
           )}
         </div>
 
-        {/* CTA */}
         {suspended ? (
           <div className="flex items-center justify-center w-full px-3 py-2 bg-red-50 border border-red-100 text-red-400 rounded-lg text-xs font-medium">
             <Ban className="w-3.5 h-3.5 mr-1.5" />
-            Đã bị vô hiệu hóa
+            {t('overview.card.disabled')}
           </div>
         ) : (
           <Link
@@ -567,7 +595,7 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
           >
             <span className="flex items-center gap-1.5">
               {eventCTAIcon(event.status)}
-              {eventCTA(event.status)}
+              {ctaLabel}
             </span>
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </Link>
@@ -578,7 +606,7 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
 }
 
 // ── Registration open/close toggle ───────────────────────────────────────────
-function RegistrationToggle({ tournamentId, isOpen, onChange }) {
+function RegistrationToggle({ tournamentId, isOpen, onChange, t }) {
   const [saving, setSaving] = useState(false)
 
   async function toggle() {
@@ -598,9 +626,9 @@ function RegistrationToggle({ tournamentId, isOpen, onChange }) {
       isOpen ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200',
     )}>
       <div>
-        <p className="text-sm font-semibold text-gray-900">Đăng ký VĐV</p>
+        <p className="text-sm font-semibold text-gray-900">{t('overview.registration')}</p>
         <p className="text-xs text-gray-500 mt-0.5">
-          {isOpen ? 'Vận động viên đang có thể gửi đăng ký' : 'Đăng ký hiện đang đóng'}
+          {isOpen ? t('overview.registrationOpen') : t('overview.registrationClosed')}
         </p>
       </div>
       <button
@@ -620,8 +648,140 @@ function RegistrationToggle({ tournamentId, isOpen, onChange }) {
   )
 }
 
+// ── Clone Tournament Modal ────────────────────────────────────────────────────
+function CloneTournamentModal({ tournament, events, profile, onClose, onCloned, t }) {
+  const [name, setName]         = useState(`${tournament.name} (${t('overview.clone.cloneBtn').toLowerCase()})`)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate]   = useState('')
+  const [location, setLocation] = useState(tournament.location ?? '')
+  const [cloning, setCloning]   = useState(false)
+  const [error, setError]       = useState(null)
+
+  async function handleClone() {
+    if (!name.trim()) { setError(t('overview.clone.nameRequired')); return }
+    setCloning(true)
+    setError(null)
+    try {
+      const { data: newT, error: tErr } = await supabase
+        .from('tournaments')
+        .insert({
+          name:           name.trim(),
+          start_date:     startDate || null,
+          end_date:       endDate   || null,
+          location:       location  || null,
+          creator_id:     profile.id,
+          status:         'setup',
+          registration_open: false,
+          num_courts:               tournament.num_courts,
+          num_first_place_qualify:  tournament.num_first_place_qualify,
+          num_second_place_qualify: tournament.num_second_place_qualify,
+          require_player_code:      tournament.require_player_code,
+        })
+        .select()
+        .single()
+      if (tErr) throw tErr
+
+      if (events.length > 0) {
+        const { error: eErr } = await supabase.from('events').insert(
+          events.map(e => ({
+            tournament_id: newT.id,
+            name:          e.name,
+            discipline:    e.discipline,
+            format:        e.format,
+            num_courts:    e.num_courts,
+            status:        'setup',
+            scoring_rules: e.scoring_rules,
+            num_first_place_qualify:  e.num_first_place_qualify,
+            num_second_place_qualify: e.num_second_place_qualify,
+            sort_order:    e.sort_order,
+            attendance_enabled: e.attendance_enabled,
+          }))
+        )
+        if (eErr) throw eErr
+      }
+
+      onCloned(newT.id)
+    } catch (err) {
+      setError(t('overview.clone.cloneError', { msg: err.message }))
+      setCloning(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Copy className="w-4 h-4 text-blue-600" />
+            <h2 className="text-base font-bold text-gray-900">{t('overview.clone.title')}</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-4 space-y-3">
+          <p className="text-xs text-gray-400">
+            {t('overview.clone.subtitle', { n: events.length })}
+          </p>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('overview.clone.newName')}</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('overview.clone.location')}</label>
+            <input
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={t('overview.clone.locationPh')}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('overview.clone.startDate')}</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('overview.clone.endDate')}</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="px-6 pb-5 flex gap-3">
+          <Button variant="secondary" onClick={onClose} className="flex-1" disabled={cloning}>{t('common.cancel')}</Button>
+          <Button onClick={handleClone} loading={cloning} className="flex-1">
+            <Copy className="w-3.5 h-3.5" /> {t('overview.clone.cloneBtn')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Add Event Modal ───────────────────────────────────────────────────────────
-function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAdded }) {
+function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAdded, t }) {
   const [selected, setSelected] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState(null)
@@ -633,16 +793,16 @@ function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAd
     setSaving(true)
     setError(null)
     try {
-      // Check event limit before inserting
       const { data: limitCheck } = await supabase.rpc('check_event_limit', {
         p_creator_id: creatorId,
         p_tournament_id: tournamentId,
       })
       if (limitCheck?.allowed === false) {
-        setError(
-          `Gói ${limitCheck.plan_slug ?? 'hiện tại'} chỉ cho phép ${limitCheck.max} nội dung/giải. ` +
-          `Giải này đã có ${limitCheck.current} nội dung.`
-        )
+        setError(t('overview.addModal.limitError', {
+          plan:    limitCheck.plan_slug ?? 'current',
+          max:     limitCheck.max,
+          current: limitCheck.current,
+        }))
         setSaving(false)
         return
       }
@@ -657,7 +817,7 @@ function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAd
       if (err) throw err
       onAdded()
     } catch (err) {
-      setError(`Lỗi: ${err.message}`)
+      setError(t('overview.addModal.error', { msg: err.message }))
       setSaving(false)
     }
   }
@@ -668,19 +828,17 @@ function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAd
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-bold text-gray-900">Thêm nội dung thi đấu</h2>
+          <h2 className="text-base font-bold text-gray-900">{t('overview.addModal.title')}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Discipline list */}
         <div className="px-6 py-4 space-y-2">
           {available.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">
-              Tất cả 5 nội dung đã được thêm.
+              {t('overview.addModal.allAdded')}
             </p>
           ) : (
             available.map(d => (
@@ -708,16 +866,15 @@ function AddEventModal({ tournamentId, creatorId, usedDisciplines, onClose, onAd
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 pb-5 flex gap-3">
-          <Button variant="secondary" onClick={onClose} className="flex-1">Hủy</Button>
+          <Button variant="secondary" onClick={onClose} className="flex-1">{t('common.cancel')}</Button>
           <Button
             onClick={handleAdd}
             loading={saving}
             disabled={!selected || saving}
             className="flex-1"
           >
-            Thêm
+            {t('common.add')}
           </Button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Trophy, Users, ChevronRight, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS } from '@/lib/constants'
+import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import Button from '@/components/ui/Button'
@@ -19,6 +20,7 @@ const STATUS_BADGE_VARIANT = {
 export default function TournamentSetup() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   const [tournament, setTournament] = useState(null)
   const [players, setPlayers] = useState([])
@@ -43,7 +45,7 @@ export default function TournamentSetup() {
       setTotalPlayers((playersRes.data || []).length)
     } catch (err) {
       console.error(err)
-      setError('Không tìm thấy giải đấu hoặc lỗi kết nối.')
+      setError(t('setup.notFound'))
     } finally {
       setLoading(false)
     }
@@ -60,7 +62,7 @@ export default function TournamentSetup() {
   if (loading) {
     return (
       <div className="flex justify-center py-24">
-        <LoadingSpinner size="lg" text="Đang tải..." />
+        <LoadingSpinner size="lg" text={t('common.loading')} />
       </div>
     )
   }
@@ -69,7 +71,7 @@ export default function TournamentSetup() {
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <Link to="/" className="text-blue-600 underline text-sm">Quay lại trang chủ</Link>
+        <Link to="/" className="text-blue-600 underline text-sm">{t('setup.homeLink')}</Link>
       </div>
     )
   }
@@ -82,9 +84,9 @@ export default function TournamentSetup() {
       <Breadcrumb
         className="mb-6"
         items={[
-          { label: 'Trang chủ', href: '/' },
+          { label: t('common.home'), href: '/' },
           { label: tournament.name, href: `/tournament/${id}` },
-          { label: 'Import VĐV' },
+          { label: t('setup.breadcrumb') },
         ]}
       />
 
@@ -102,11 +104,11 @@ export default function TournamentSetup() {
               </Badge>
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-              <span>{tournament.num_groups} bảng đấu</span>
+              <span>{t('setup.groups', { n: tournament.num_groups })}</span>
               <span>·</span>
               <span className={`flex items-center gap-1 ${totalPlayers > 0 ? 'text-green-600' : ''}`}>
                 <Users className="w-3.5 h-3.5" />
-                {totalPlayers} vận động viên
+                {t('setup.athleteCount', { n: totalPlayers })}
               </span>
             </div>
           </div>
@@ -114,7 +116,7 @@ export default function TournamentSetup() {
 
         {/* Progress steps */}
         <div className="mt-4 pt-4 border-t border-gray-100">
-          <TournamentProgress status={tournament.status} />
+          <TournamentProgress status={tournament.status} t={t} />
         </div>
       </div>
 
@@ -125,8 +127,8 @@ export default function TournamentSetup() {
             1
           </div>
           <div>
-            <h2 className="text-base font-bold text-gray-900">Import Vận Động Viên</h2>
-            <p className="text-sm text-gray-500">Upload file Excel hoặc thêm thủ công</p>
+            <h2 className="text-base font-bold text-gray-900">{t('setup.title')}</h2>
+            <p className="text-sm text-gray-500">{t('setup.subtitle')}</p>
           </div>
         </div>
 
@@ -144,10 +146,10 @@ export default function TournamentSetup() {
             <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
             <div>
               <p className="text-sm font-semibold text-green-800">
-                Đã có {totalPlayers} VĐV — sẵn sàng phân bảng!
+                {t('setup.ready', { n: totalPlayers })}
               </p>
               <p className="text-xs text-green-600 mt-0.5">
-                Bước tiếp theo: Random {tournament.num_groups} bảng tự động
+                {t('setup.nextStep', { n: tournament.num_groups })}
               </p>
             </div>
           </div>
@@ -155,7 +157,7 @@ export default function TournamentSetup() {
             onClick={() => navigate(`/tournament/${id}/groups`)}
             className="whitespace-nowrap"
           >
-            Vào vòng bảng <ChevronRight className="w-4 h-4" />
+            {t('setup.goToGroups')} <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       )}
@@ -165,21 +167,21 @@ export default function TournamentSetup() {
 
 // ─── Progress stepper ─────────────────────────────────────────────────────────
 
-const STEPS = [
-  { key: 'setup',       label: 'Import VĐV' },
-  { key: 'group_stage', label: 'Vòng bảng'  },
-  { key: 'knockout',    label: 'Knockout'    },
-  { key: 'completed',   label: 'Kết thúc'   },
+const STEP_KEYS = [
+  { key: 'setup',       progressKey: 'import'    },
+  { key: 'group_stage', progressKey: 'groups'    },
+  { key: 'knockout',    progressKey: 'knockout'  },
+  { key: 'completed',   progressKey: 'completed' },
 ]
 
 const ORDER = { setup: 0, group_stage: 1, knockout: 2, completed: 3 }
 
-function TournamentProgress({ status }) {
+function TournamentProgress({ status, t }) {
   const currentOrder = ORDER[status] ?? 0
 
   return (
     <div className="flex items-center gap-0">
-      {STEPS.map((step, idx) => {
+      {STEP_KEYS.map((step, idx) => {
         const stepOrder = ORDER[step.key]
         const done = stepOrder < currentOrder
         const active = stepOrder === currentOrder
@@ -199,10 +201,10 @@ function TournamentProgress({ status }) {
                 done   ? 'text-green-600' :
                          'text-gray-400'
               }`}>
-                {step.label}
+                {t(`setup.progress.${step.progressKey}`)}
               </span>
             </div>
-            {idx < STEPS.length - 1 && (
+            {idx < STEP_KEYS.length - 1 && (
               <div className={`h-px flex-1 mx-2 mb-3 transition-colors ${done ? 'bg-green-300' : 'bg-gray-200'}`} />
             )}
           </div>

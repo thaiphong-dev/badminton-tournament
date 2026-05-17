@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef, startTransition } from 'react'
+import { useState, useEffect, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trophy, CalendarDays, User, Loader2, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, Save, AlertCircle, Bell } from 'lucide-react'
+import { Trophy, CalendarDays, User, Loader2, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, Save, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { cn } from '@/lib/utils/cn'
 import RegistrationModal from '@/components/athlete/RegistrationModal'
 import { showToast } from '@/lib/hooks/useApiError'
+import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
 
 const STATUS_BADGE = {
   pending:  { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
@@ -24,9 +25,8 @@ export default function AthleteDashboard() {
   const { profile } = useAuth()
   const [tab, setTab]               = useState('open')
   const [newNotifCount, setNewNotifCount] = useState(0)
-  const [toast, setToast]           = useState(null)
-  const toastTimerRef               = useRef(null)
 
+  // NR5: Realtime đăng ký được duyệt/từ chối
   useEffect(() => {
     if (!profile) return
 
@@ -38,25 +38,62 @@ export default function AthleteDashboard() {
         filter: `athlete_id=eq.${profile.id}`,
       }, (payload) => {
         const newStatus = payload.new?.status
-        if (newStatus === 'approved' || newStatus === 'rejected') {
+        if (newStatus === 'approved') {
           setNewNotifCount(prev => prev + 1)
-          const msg = newStatus === 'approved'
-            ? 'Đăng ký của bạn đã được duyệt!'
-            : 'Đăng ký của bạn bị từ chối.'
-          setToast({ msg, ok: newStatus === 'approved' })
-          clearTimeout(toastTimerRef.current)
-          toastTimerRef.current = setTimeout(() => setToast(null), 4000)
+          showToast('Đăng ký của bạn đã được duyệt!', 'success')
+        } else if (newStatus === 'rejected') {
+          setNewNotifCount(prev => prev + 1)
+          showToast('Đăng ký của bạn bị từ chối.', 'error')
         }
       })
       .subscribe((status, err) => {
         if (status === 'CHANNEL_ERROR' || err) {
-          console.warn('[AthleteDashboard] Realtime subscription error:', status, err)
+          console.warn('[AthleteDashboard] reg subscription error:', status, err)
         }
       })
 
+    return () => supabase.removeChannel(channel)
+  }, [profile?.id])
+
+  // NR6: Load player IDs trước, rồi mới subscribe matches theo từng player ID
+  useEffect(() => {
+    if (!profile?.id) return
+    let channels = []
+    let cancelled = false
+
+    supabase
+      .from('players')
+      .select('id')
+      .eq('athlete_id', profile.id)
+      .then(({ data }) => {
+        if (cancelled || !data?.length) return
+        const playerIds = data.map(p => p.id)
+        athletePlayerIds.current = new Set(playerIds)
+
+        const handleMatchUpdate = (payload) => {
+          const m = payload.new
+          if (m.status === 'calling') {
+            showToast(`📞 Trận của bạn được gọi vào Sân ${m.court_number}! Vui lòng vào sân.`, 'info')
+          } else if (m.status === 'active') {
+            showToast(`🏸 Trận tại Sân ${m.court_number} đã bắt đầu!`, 'success')
+          }
+        }
+
+        // 1 channel per player ID, filter trên player1_id và player2_id riêng
+        playerIds.forEach((pid, i) => {
+          const ch1 = supabase.channel(`athlete-mp1-${pid}`)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player1_id=eq.${pid}` }, handleMatchUpdate)
+            .subscribe()
+          const ch2 = supabase.channel(`athlete-mp2-${pid}`)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player2_id=eq.${pid}` }, handleMatchUpdate)
+            .subscribe()
+          channels.push(ch1, ch2)
+        })
+      })
+
     return () => {
-      supabase.removeChannel(channel)
-      clearTimeout(toastTimerRef.current)
+      cancelled = true
+      channels.forEach(ch => supabase.removeChannel(ch))
     }
   }, [profile?.id])
 
@@ -70,9 +107,12 @@ export default function AthleteDashboard() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
       {/* Greeting */}
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-gray-900">Xin chào, {profile.name} 👋</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Vận động viên · {profile.club || 'Chưa có CLB'}</p>
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Xin chào, {profile.name} 👋</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Vận động viên · {profile.club || 'Chưa có CLB'}</p>
+        </div>
+        <PushSubscribeButton userId={profile?.id} className="shrink-0 mt-1" />
       </div>
 
       {/* Tab bar */}
@@ -106,16 +146,6 @@ export default function AthleteDashboard() {
       {tab === 'mine'    && <MyRegistrationsTab profile={profile} />}
       {tab === 'profile' && <ProfileTab profile={profile} />}
 
-      {/* Toast notification */}
-      {toast && (
-        <div className={cn(
-          'fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all',
-          toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white',
-        )}>
-          <Bell className="w-4 h-4 shrink-0" />
-          {toast.msg}
-        </div>
-      )}
     </div>
   )
 }
@@ -353,6 +383,7 @@ function MyRegistrationsTab({ profile }) {
         .from('tournament_registrations')
         .select(`
           id, status, note, created_at, event_id,
+          looking_for_partner, partner_note,
           tournaments(id, name, status, start_date),
           events(id, name, discipline)
         `)
@@ -386,10 +417,12 @@ function MyRegistrationsTab({ profile }) {
             .select(`
               id, player1_id, player2_id, event_id, stage, match_number,
               status, player1_scores, player2_scores, winner_id,
+              court_number, wave_number,
               p1:players!player1_id(id, name),
               p2:players!player2_id(id, name)
             `)
             .or(`player1_id.in.(${idList}),player2_id.in.(${idList})`)
+            .order('wave_number', { nullsFirst: false })
             .order('match_number')
 
           const byEvent = {}
@@ -479,15 +512,23 @@ function MyRegistrationsTab({ profile }) {
                         const scoreStr = done && myScores?.length
                           ? myScores.map((s, i) => `${s}–${opScores?.[i] ?? 0}`).join(' ')
                           : null
+                        const scheduled = m.court_number != null && m.wave_number != null
+                        const calling  = m.status === 'calling'
                         return (
                           <div key={m.id} className={cn(
                             'flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-0',
                             iWon && 'bg-green-50/60',
+                            calling && 'bg-blue-50/60',
                           )}>
                             <div className="min-w-0 flex-1">
                               <p className="text-[11px] text-gray-400">
                                 {STAGE_LABELS[m.stage] ?? m.stage}
                                 {m.match_number ? ` · #${m.match_number}` : ''}
+                                {scheduled && !done && (
+                                  <span className="ml-1.5 text-blue-500 font-medium">
+                                    Sân {m.court_number} · Lượt {m.wave_number}
+                                  </span>
+                                )}
                               </p>
                               <p className={cn(
                                 'text-xs font-medium truncate',
@@ -497,7 +538,10 @@ function MyRegistrationsTab({ profile }) {
                               </p>
                             </div>
                             <div className="shrink-0 text-right ml-3">
-                              {live && (
+                              {calling && (
+                                <span className="text-[10px] font-bold text-blue-600 animate-pulse">📞 Vào sân!</span>
+                              )}
+                              {live && !calling && (
                                 <span className="text-[10px] font-bold text-red-500 animate-pulse">● LIVE</span>
                               )}
                               {done && scoreStr && (
@@ -508,7 +552,7 @@ function MyRegistrationsTab({ profile }) {
                                   {scoreStr}
                                 </span>
                               )}
-                              {!done && !live && (
+                              {!done && !live && !calling && (
                                 <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
                                   <Clock className="w-3 h-3" /> Chờ
                                 </span>
@@ -526,12 +570,132 @@ function MyRegistrationsTab({ profile }) {
                       Lịch thi đấu chưa được xếp.
                     </p>
                   )}
+
+                  {/* Doubles partner finder — only for approved doubles registrations */}
+                  {r.status === 'approved' && r.events?.discipline?.includes('doubles') && (
+                    <DoublesPartnerSection reg={r} profile={profile} />
+                  )}
                 </div>
               )
             })}
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Doubles partner finder ────────────────────────────────────────────────────
+
+function DoublesPartnerSection({ reg, profile }) {
+  const [looking, setLooking]         = useState(reg.looking_for_partner ?? false)
+  const [note, setNote]               = useState(reg.partner_note ?? '')
+  const [partners, setPartners]       = useState([])
+  const [loadingPartners, setLoadingPartners] = useState(false)
+  const [toggling, setToggling]       = useState(false)
+
+  // Load other athletes looking for a partner in the same event
+  useEffect(() => {
+    async function fetchPartners() {
+      setLoadingPartners(true)
+      const { data } = await supabase
+        .from('tournament_registrations')
+        .select('id, athlete_id, looking_for_partner, partner_note, profiles(id, name, club, phone)')
+        .eq('event_id', reg.event_id)
+        .eq('looking_for_partner', true)
+        .neq('athlete_id', profile.id)
+      setPartners(data || [])
+      setLoadingPartners(false)
+    }
+    fetchPartners()
+  }, [reg.event_id, profile.id])
+
+  async function handleToggle() {
+    setToggling(true)
+    const newVal = !looking
+    const { error } = await supabase
+      .from('tournament_registrations')
+      .update({ looking_for_partner: newVal, partner_note: newVal ? (note || null) : null })
+      .eq('id', reg.id)
+    if (!error) {
+      setLooking(newVal)
+      if (!newVal) setNote('')
+    }
+    setToggling(false)
+  }
+
+  async function handleNoteBlur() {
+    if (!looking) return
+    await supabase
+      .from('tournament_registrations')
+      .update({ partner_note: note.trim() || null })
+      .eq('id', reg.id)
+  }
+
+  return (
+    <div className="mx-5 mb-3 border border-blue-100 rounded-xl overflow-hidden bg-blue-50/30">
+      {/* Toggle row */}
+      <div className="px-3 py-2 flex items-center gap-2">
+        <button
+          onClick={handleToggle}
+          disabled={toggling}
+          className={cn(
+            'text-xs px-3 py-1 rounded-full font-medium border transition-colors shrink-0',
+            looking
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'bg-white text-gray-500 border-gray-300 hover:border-gray-400',
+            toggling && 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          {looking ? '● Đang tìm partner' : 'Tìm partner'}
+        </button>
+        {looking && (
+          <input
+            type="text"
+            value={note}
+            onChange={e => setNote(e.target.value.slice(0, 100))}
+            onBlur={handleNoteBlur}
+            placeholder="Lời nhắn cho partner (tuỳ chọn)…"
+            maxLength={100}
+            className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        )}
+      </div>
+
+      {/* Partner list */}
+      <div className="border-t border-blue-100 px-3 py-2 space-y-1.5">
+        <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wide">
+          Đang tìm partner trong nội dung này
+        </p>
+        {loadingPartners ? (
+          <p className="text-xs text-gray-400 italic py-1">Đang tải…</p>
+        ) : partners.length === 0 ? (
+          <p className="text-xs text-gray-400 italic py-1">Chưa có ai đang tìm partner.</p>
+        ) : (
+          partners.map(p => {
+            const pl = p.profiles
+            const phone = pl?.phone
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-2 py-1">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-gray-800 truncate">{pl?.name ?? '—'}</p>
+                  <p className="text-[11px] text-gray-400 truncate">
+                    {pl?.club || 'Chưa có CLB'}
+                    {p.partner_note ? ` · ${p.partner_note}` : ''}
+                  </p>
+                </div>
+                <a
+                  href={phone ? `tel:${phone}` : '#'}
+                  onClick={!phone ? (e) => { e.preventDefault(); navigator.clipboard?.writeText(pl?.name ?? '') } : undefined}
+                  className="shrink-0 text-[11px] px-2.5 py-1 rounded-full bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Liên hệ
+                </a>
+              </div>
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }

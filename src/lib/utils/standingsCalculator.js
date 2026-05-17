@@ -1,19 +1,23 @@
 import { supabase } from '@/lib/supabase'
 
 /**
+ * Tiebreaker modes:
+ *   'bwf'         (default) — Wins → H2H wins → H2H sets diff → H2H score diff → overall sets diff → overall score diff
+ *   'sets_first'             — Wins → overall sets diff → overall score diff (bỏ qua H2H)
+ *   'h2h_score_first'        — Wins → H2H score diff → H2H sets diff → overall sets diff → overall score diff
+ */
+
+/**
  * Calculate group standings from match results.
  *
- * Sort order (BWF-aligned):
- *   1. Wins
- *   2. Head-to-head results among tied players (mini-standings)
- *   3. Sets difference  (hiệu số hiệp)
- *   4. Points difference (hiệu số điểm)
- *
- * @param {Array} matches - All matches in the group (any status)
- * @param {Array} players - Players in the group {id, name, club}
+ * @param {Array}  matches         - All matches in the group (any status)
+ * @param {Array}  players         - Players in the group {id, name, club}
+ * @param {Object} options
+ * @param {string} options.tiebreakerMode - 'bwf' | 'sets_first' | 'h2h_score_first' (default: 'bwf')
  * @returns {Array} Sorted standings with ranks assigned
  */
-export function calculateStandings(matches, players) {
+export function calculateStandings(matches, players, options = {}) {
+  const tiebreakerMode = options.tiebreakerMode ?? 'bwf'
   const completedMatches = matches.filter(m => m.status === 'completed' && m.winner_id)
 
   // Build stats map keyed by player id
@@ -62,8 +66,7 @@ export function calculateStandings(matches, players) {
     score_diff: s.score_for - s.score_against,
   }))
 
-  // Sort using wins → head-to-head → sets_diff → score_diff
-  const sorted = resolveStandings(standings, completedMatches)
+  const sorted = resolveStandings(standings, completedMatches, tiebreakerMode)
   sorted.forEach((s, idx) => { s.rank = idx + 1 })
   return sorted
 }
@@ -71,7 +74,7 @@ export function calculateStandings(matches, players) {
 /**
  * Group players by wins, then resolve ties within each group.
  */
-function resolveStandings(standings, completedMatches) {
+function resolveStandings(standings, completedMatches, tiebreakerMode) {
   const byWins = new Map()
   standings.forEach(s => {
     if (!byWins.has(s.wins)) byWins.set(s.wins, [])
@@ -80,16 +83,16 @@ function resolveStandings(standings, completedMatches) {
 
   const result = []
   ;[...byWins.keys()].sort((a, b) => b - a).forEach(wins => {
-    result.push(...resolveGroup(byWins.get(wins), completedMatches))
+    result.push(...resolveGroup(byWins.get(wins), completedMatches, tiebreakerMode))
   })
   return result
 }
 
 /**
  * Resolve ordering within a group of equally-won players.
- * Uses head-to-head mini-standings, then falls back to overall sets/score diffs.
+ * Behavior controlled by tiebreakerMode.
  */
-function resolveGroup(group, completedMatches) {
+function resolveGroup(group, completedMatches, tiebreakerMode = 'bwf') {
   if (group.length === 1) return group
 
   const tiedIds   = new Set(group.map(s => s.player_id))
@@ -121,15 +124,26 @@ function resolveGroup(group, completedMatches) {
   return [...group].sort((a, b) => {
     const am = mini[a.player_id]
     const bm = mini[b.player_id]
-    // 1. Head-to-head wins
-    if (bm.wins !== am.wins)             return bm.wins       - am.wins
-    // 2. Head-to-head sets diff
-    if (bm.sets_diff !== am.sets_diff)   return bm.sets_diff  - am.sets_diff
-    // 3. Head-to-head score diff
+
+    if (tiebreakerMode === 'sets_first') {
+      // Bỏ qua H2H — so thẳng hiệu số hiệp/điểm tổng
+      if (b.sets_diff  !== a.sets_diff)  return b.sets_diff  - a.sets_diff
+      return b.score_diff - a.score_diff
+    }
+
+    if (tiebreakerMode === 'h2h_score_first') {
+      // H2H điểm trước, sau đó hiệp, rồi tổng
+      if (bm.score_diff !== am.score_diff) return bm.score_diff - am.score_diff
+      if (bm.sets_diff  !== am.sets_diff)  return bm.sets_diff  - am.sets_diff
+      if (b.sets_diff   !== a.sets_diff)   return b.sets_diff   - a.sets_diff
+      return b.score_diff - a.score_diff
+    }
+
+    // Default: BWF — H2H wins → H2H sets → H2H score → overall sets → overall score
+    if (bm.wins       !== am.wins)       return bm.wins       - am.wins
+    if (bm.sets_diff  !== am.sets_diff)  return bm.sets_diff  - am.sets_diff
     if (bm.score_diff !== am.score_diff) return bm.score_diff - am.score_diff
-    // 4. Overall sets diff
-    if (b.sets_diff !== a.sets_diff)     return b.sets_diff   - a.sets_diff
-    // 5. Overall score diff
+    if (b.sets_diff   !== a.sets_diff)   return b.sets_diff   - a.sets_diff
     return b.score_diff - a.score_diff
   })
 }

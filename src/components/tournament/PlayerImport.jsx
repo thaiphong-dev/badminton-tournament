@@ -52,6 +52,13 @@ export default function PlayerImport({
 
     setParseError(null)
     setImportSuccess(false)
+
+    const MAX_MB = 5
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setParseError(`File quá lớn — tối đa ${MAX_MB}MB (file của bạn: ${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+      return
+    }
+
     const reader = new FileReader()
 
     reader.onload = (e) => {
@@ -124,14 +131,23 @@ export default function PlayerImport({
             ? new Set(prev.map(p => p.name.toLowerCase()))
             : null
 
-          const added = parsed.filter(p => {
+          // Dedup nội bộ trong file (tránh import 2 dòng giống nhau từ cùng 1 file)
+          const seenInFile = new Set()
+          const dedupedParsed = parsed.filter(p => {
+            const key = requirePlayerCode ? p.player_code : p.name.toLowerCase()
+            if (!key || seenInFile.has(key)) return false
+            seenInFile.add(key)
+            return true
+          })
+
+          const added = dedupedParsed.filter(p => {
             if (requirePlayerCode) return p.player_code && !existingCodes.has(p.player_code)
             return !existingNames.has(p.name.toLowerCase())
           }).map(p => ({ ...p, _local: true, _key: crypto.randomUUID() }))
 
           const skipped = parsed.length - added.length
           if (skipped > 0) {
-            setParseError(`Đã bỏ qua ${skipped} VĐV vì ${requirePlayerCode ? 'mã số' : 'tên'} đã tồn tại.`)
+            setParseError(`Đã bỏ qua ${skipped} VĐV vì ${requirePlayerCode ? 'mã số' : 'tên'} đã tồn tại hoặc trùng lặp trong file.`)
           }
           return [...prev, ...added]
         })
@@ -490,7 +506,7 @@ export default function PlayerImport({
 
       {importSuccess && (
         <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700">
-          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          <CheckCircle className="w-4 h-4 shrink-0" />
           <span>Import thành công! Tổng cộng <strong>{players.length}</strong> VĐV đã được lưu.</span>
         </div>
       )}

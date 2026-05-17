@@ -3,19 +3,12 @@ import { Loader2, CheckCircle2, XCircle, Clock, AlertCircle, Filter, Users } fro
 import { supabase } from '@/lib/supabase'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { isDoublesDiscipline } from '@/lib/utils/eventHelpers'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
+import { sendPush } from '@/lib/utils/sendPush'
 
-const STATUS_CONFIG = {
-  pending:  { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
-  approved: { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
-  rejected: { label: 'Từ chối',   color: 'bg-red-100 text-red-700',      icon: XCircle },
-}
-
-/**
- * Creator-side registration management tab.
- * Props: tournamentId – string
- */
-export default function RegistrationReview({ tournamentId }) {
+export default function RegistrationReview({ tournamentId, tournamentName = '' }) {
+  const { t } = useI18n()
   const [regs, setRegs]         = useState([])
   const [events, setEvents]     = useState([])
   const [loading, setLoading]   = useState(true)
@@ -60,7 +53,20 @@ export default function RegistrationReview({ tournamentId }) {
       setError(err.message)
     } else {
       const reg = regs.find(r => r.id === id)
-      if (reg) await createPlayerFromRegistration(reg)
+      if (reg) {
+        await createPlayerFromRegistration(reg)
+        await supabase.rpc('notify_registration_status', {
+          p_athlete_id:      reg.athlete_id,
+          p_status:          'approved',
+          p_tournament_name: tournamentName,
+        })
+        sendPush(
+          reg.athlete_id,
+          t('reg.approvedPush'),
+          t('reg.approvedMsg', { name: tournamentName }),
+          '/',
+        )
+      }
       setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
     }
     setActionId(null)
@@ -97,8 +103,26 @@ export default function RegistrationReview({ tournamentId }) {
       .from('tournament_registrations')
       .update({ status: 'rejected', note: reason || null })
       .eq('id', id)
-    if (err) setError(err.message)
-    else setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected', note: reason } : r))
+    if (err) {
+      setError(err.message)
+    } else {
+      const reg = regs.find(r => r.id === id)
+      if (reg) {
+        await supabase.rpc('notify_registration_status', {
+          p_athlete_id:      reg.athlete_id,
+          p_status:          'rejected',
+          p_tournament_name: tournamentName,
+          p_reject_reason:   reason || null,
+        })
+        sendPush(
+          reg.athlete_id,
+          t('reg.rejectedPush'),
+          t('reg.rejectedMsg', { name: tournamentName }),
+          '/',
+        )
+      }
+      setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected', note: reason } : r))
+    }
     setActionId(null)
     setRejectModal(null)
   }
@@ -127,10 +151,10 @@ export default function RegistrationReview({ tournamentId }) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600">
-            <span className="font-semibold text-gray-900">{regs.length}</span> đơn
+            <span className="font-semibold text-gray-900">{regs.length}</span> {t('reg.modal.title').includes('reject') ? 'registrations' : 'đơn'}
             {pendingTotal > 0 && (
               <span className="ml-2 inline-flex items-center bg-yellow-100 text-yellow-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                {pendingTotal} chờ duyệt
+                {t('reg.pendingBadge', { n: pendingTotal })}
               </span>
             )}
           </span>
@@ -144,7 +168,7 @@ export default function RegistrationReview({ tournamentId }) {
               onChange={e => setFilter(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">Tất cả nội dung</option>
+              <option value="all">{t('reg.allEvents')}</option>
               {events.map(e => (
                 <option key={e.id} value={e.id}>
                   {DISCIPLINE_ICONS[e.discipline] ?? '🏸'} {DISCIPLINE_LABELS[e.discipline] ?? e.name}
@@ -163,26 +187,26 @@ export default function RegistrationReview({ tournamentId }) {
 
       {filtered.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-gray-200 rounded-2xl">
-          <p className="text-sm text-gray-400">Chưa có đơn đăng ký nào.</p>
+          <p className="text-sm text-gray-400">{t('reg.noRegistrations')}</p>
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Pending first */}
           {pending.length > 0 && (
             <RegGroup
-              title="Chờ duyệt"
+              title={t('reg.status.pending')}
               regs={pending}
               showActions
               actionId={actionId}
               onApprove={handleApprove}
               onReject={id => setRejectModal({ regId: id })}
+              t={t}
             />
           )}
           {approved.length > 0 && (
-            <RegGroup title="Đã duyệt" regs={approved} />
+            <RegGroup title={t('reg.status.approved')} regs={approved} t={t} />
           )}
           {rejected.length > 0 && (
-            <RegGroup title="Từ chối" regs={rejected} />
+            <RegGroup title={t('reg.status.rejected')} regs={rejected} t={t} />
           )}
         </div>
       )}
@@ -193,16 +217,27 @@ export default function RegistrationReview({ tournamentId }) {
           onConfirm={reason => handleReject(rejectModal.regId, reason)}
           onClose={() => setRejectModal(null)}
           saving={!!actionId}
+          t={t}
         />
       )}
     </div>
   )
 }
 
+// ── Status config (derived from t()) ─────────────────────────────────────────
+
+function getStatusConfig(status, t) {
+  return {
+    pending:  { label: t('reg.status.pending'),  color: 'bg-yellow-100 text-yellow-700', icon: Clock },
+    approved: { label: t('reg.status.approved'), color: 'bg-green-100 text-green-700',  icon: CheckCircle2 },
+    rejected: { label: t('reg.status.rejected'), color: 'bg-red-100 text-red-700',      icon: XCircle },
+  }[status] ?? { label: status, color: 'bg-gray-100 text-gray-500', icon: Clock }
+}
+
 // ── Reg group ─────────────────────────────────────────────────────────────────
 
-function RegGroup({ title, regs, showActions = false, actionId, onApprove, onReject }) {
-  const cfg = STATUS_CONFIG[regs[0]?.status] ?? STATUS_CONFIG.pending
+function RegGroup({ title, regs, showActions = false, actionId, onApprove, onReject, t }) {
+  const cfg = getStatusConfig(regs[0]?.status, t)
   const Icon = cfg.icon
   return (
     <div>
@@ -219,6 +254,7 @@ function RegGroup({ title, regs, showActions = false, actionId, onApprove, onRej
             isActing={actionId === r.id}
             onApprove={() => onApprove(r.id)}
             onReject={() => onReject(r.id)}
+            t={t}
           />
         ))}
       </div>
@@ -226,10 +262,10 @@ function RegGroup({ title, regs, showActions = false, actionId, onApprove, onRej
   )
 }
 
-function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
+function RegCard({ reg, showActions, isActing, onApprove, onReject, t }) {
   const athlete  = reg.profiles
   const event    = reg.events
-  const cfg      = STATUS_CONFIG[reg.status] ?? STATUS_CONFIG.pending
+  const cfg      = getStatusConfig(reg.status, t)
   const doubles  = event && isDoublesDiscipline(event.discipline)
   const partnerName = reg.partner_profile?.name || reg.partner_name || null
   const partnerClub = reg.partner_profile?.club || reg.partner_club || null
@@ -239,7 +275,7 @@ function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
       <div className="flex items-start justify-between gap-3">
         {/* Athlete info */}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900 truncate">{athlete?.name ?? 'VĐV'}</p>
+          <p className="text-sm font-semibold text-gray-900 truncate">{athlete?.name ?? t('reg.athlete')}</p>
           <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5 flex-wrap">
             {athlete?.club && <span>{athlete.club}</span>}
             {athlete?.phone && <span>· {athlete.phone}</span>}
@@ -260,7 +296,7 @@ function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
             <span className="font-medium">{partnerName}</span>
             {partnerClub && <span className="text-gray-400"> · {partnerClub}</span>}
             {reg.partner_profile && (
-              <span className="ml-1 text-green-600">(có tài khoản)</span>
+              <span className="ml-1 text-green-600">{t('reg.hasAccount')}</span>
             )}
           </div>
         </div>
@@ -282,7 +318,7 @@ function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
               disabled={isActing}
               className="text-xs text-red-600 hover:text-red-700 font-medium px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40"
             >
-              Từ chối
+              {t('reg.reject')}
             </button>
             <button
               onClick={onApprove}
@@ -290,7 +326,7 @@ function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
               className="text-xs text-white bg-blue-600 hover:bg-blue-700 font-medium px-3 py-1 rounded-lg transition-colors disabled:opacity-40 flex items-center gap-1"
             >
               {isActing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-              Duyệt
+              {t('reg.approve')}
             </button>
           </div>
         ) : (
@@ -305,7 +341,7 @@ function RegCard({ reg, showActions, isActing, onApprove, onReject }) {
 
 // ── Reject reason modal ───────────────────────────────────────────────────────
 
-function RejectReasonModal({ onConfirm, onClose, saving }) {
+function RejectReasonModal({ onConfirm, onClose, saving, t }) {
   const [reason, setReason] = useState('')
   return (
     <div
@@ -313,15 +349,15 @@ function RejectReasonModal({ onConfirm, onClose, saving }) {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-base font-bold text-gray-900 mb-3">Từ chối đơn đăng ký</h2>
+        <h2 className="text-base font-bold text-gray-900 mb-3">{t('reg.modal.title')}</h2>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          Lý do <span className="text-gray-400 font-normal">(tuỳ chọn)</span>
+          {t('reg.modal.reason')} <span className="text-gray-400 font-normal">{t('reg.modal.optional')}</span>
         </label>
         <textarea
           value={reason}
           onChange={e => setReason(e.target.value)}
           rows={3}
-          placeholder="VD: Nội dung đã đủ số lượng VĐV..."
+          placeholder={t('reg.modal.placeholder')}
           className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
         />
         <div className="flex gap-3">
@@ -329,7 +365,7 @@ function RejectReasonModal({ onConfirm, onClose, saving }) {
             onClick={onClose}
             className="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50"
           >
-            Huỷ
+            {t('common.cancel')}
           </button>
           <button
             onClick={() => onConfirm(reason.trim())}
@@ -337,7 +373,7 @@ function RejectReasonModal({ onConfirm, onClose, saving }) {
             className="flex-1 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            Xác nhận từ chối
+            {t('reg.modal.confirm')}
           </button>
         </div>
       </div>

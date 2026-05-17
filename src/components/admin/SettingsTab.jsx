@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Check, Plus, Trash2 } from 'lucide-react'
+import { Check, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { invalidateFeatureRegistryCache } from '@/lib/hooks/useFeatureRegistry'
 
 const BANKS = [
-  { name: 'Vietcombank',  bin: '970436' },
-  { name: 'Vietinbank',   bin: '970415' },
-  { name: 'BIDV',         bin: '970418' },
-  { name: 'Agribank',     bin: '970405' },
-  { name: 'Techcombank',  bin: '970407' },
-  { name: 'MB Bank',      bin: '970422' },
-  { name: 'ACB',          bin: '970416' },
-  { name: 'VPBank',       bin: '970432' },
-  { name: 'TPBank',       bin: '970423' },
-  { name: 'Sacombank',    bin: '970403' },
+  { name: 'Vietcombank',  bin: '970436', code: 'VCB' },
+  { name: 'Vietinbank',   bin: '970415', code: 'VietinBank' },
+  { name: 'BIDV',         bin: '970418', code: 'BIDV' },
+  { name: 'Agribank',     bin: '970405', code: 'Agribank' },
+  { name: 'Techcombank',  bin: '970407', code: 'TCB' },
+  { name: 'MB Bank',      bin: '970422', code: 'MBBank' },
+  { name: 'MSB',          bin: '970426', code: 'MSB' },
+  { name: 'ACB',          bin: '970416', code: 'ACB' },
+  { name: 'VPBank',       bin: '970432', code: 'VPBank' },
+  { name: 'TPBank',       bin: '970423', code: 'TPBank' },
+  { name: 'Sacombank',    bin: '970403', code: 'Sacombank' },
 ]
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -25,6 +26,7 @@ export default function SettingsTab({ adminId }) {
     bank_owner:   '',
     bank_branch:  '',
     bank_bin:     '970436',
+    bank_code:    'VCB',
   })
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
@@ -42,6 +44,12 @@ export default function SettingsTab({ adminId }) {
   const [savingReg, setSavingReg]   = useState(false)
   const [savedReg, setSavedReg]     = useState(false)
   const [errReg, setErrReg]         = useState(null)
+
+  // Cron health
+  const [cronHealth, setCronHealth]       = useState([])
+  const [cronLoading, setCronLoading]     = useState(false)
+  const [cronErr, setCronErr]             = useState(null)
+  const [cronLastFetch, setCronLastFetch] = useState(null)
 
   useEffect(() => {
     Promise.all([
@@ -68,7 +76,7 @@ export default function SettingsTab({ adminId }) {
 
   function handleBankSelect(e) {
     const bank = BANKS.find(b => b.name === e.target.value)
-    if (bank) setForm(prev => ({ ...prev, bank_name: bank.name, bank_bin: bank.bin }))
+    if (bank) setForm(prev => ({ ...prev, bank_name: bank.name, bank_bin: bank.bin, bank_code: bank.code }))
   }
 
   async function handleSave() {
@@ -126,10 +134,21 @@ export default function SettingsTab({ adminId }) {
     setTimeout(() => setSavedAddon(false), 2500)
   }
 
+  const fetchCronHealth = useCallback(async () => {
+    if (!adminId) return
+    setCronLoading(true)
+    setCronErr(null)
+    const { data, error } = await supabase.rpc('get_cron_health', { p_admin_id: adminId })
+    setCronLoading(false)
+    if (error) { setCronErr(error.message); return }
+    setCronHealth(data ?? [])
+    setCronLastFetch(new Date())
+  }, [adminId])
+
   const qrUrl =
-    form.bank_bin && form.bank_account && form.bank_owner
-      ? `https://img.vietqr.io/image/${form.bank_bin}-${form.bank_account}-compact2.jpg` +
-        `?amount=299000&addInfo=BTSUB-PREVIEW&accountName=${encodeURIComponent(form.bank_owner)}`
+    form.bank_code && form.bank_account
+      ? `https://qr.sepay.vn/img?bank=${form.bank_code}&acc=${form.bank_account}` +
+        `&amount=299000&des=BTSUB-PREVIEW&template=compact`
       : null
 
   if (loading) return (
@@ -351,6 +370,91 @@ export default function SettingsTab({ adminId }) {
               ? 'Đang lưu...'
               : 'Lưu registry'}
         </button>
+      </div>
+
+      {/* Cron Health */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-gray-900">Cron Job Health</h3>
+          <button
+            onClick={fetchCronHealth}
+            disabled={cronLoading}
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${cronLoading ? 'animate-spin' : ''}`} />
+            {cronLoading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">
+          Trạng thái lần chạy gần nhất của các scheduled job (pg_cron hoặc Edge Function).
+        </p>
+
+        {cronErr && (
+          <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2 mb-3">
+            {cronErr.includes('Unauthorized')
+              ? 'Chỉ admin mới xem được.'
+              : cronErr}
+          </p>
+        )}
+
+        {cronHealth.length === 0 && !cronLoading && !cronErr && (
+          <div className="text-center py-6">
+            <p className="text-sm text-gray-400 mb-3">
+              Chưa có dữ liệu. Bấm Refresh để tải hoặc chưa có job nào chạy.
+            </p>
+            <button
+              onClick={fetchCronHealth}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              Tải ngay
+            </button>
+          </div>
+        )}
+
+        {cronHealth.length > 0 && (
+          <div className="space-y-2">
+            {cronHealth.map(job => (
+              <div
+                key={job.job_name}
+                className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
+                  job.success
+                    ? 'bg-green-50 border-green-100'
+                    : 'bg-red-50 border-red-100'
+                }`}
+              >
+                {job.success
+                  ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                  : <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                }
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono font-medium text-gray-800 truncate">{job.job_name}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+                    <span className="text-xs text-gray-500">
+                      {job.last_run
+                        ? new Date(job.last_run).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'medium' })
+                        : 'Chưa chạy'}
+                    </span>
+                    {job.duration_ms != null && (
+                      <span className="text-xs text-gray-400">{job.duration_ms} ms</span>
+                    )}
+                    {job.rows_affected != null && (
+                      <span className="text-xs text-gray-400">{job.rows_affected} rows</span>
+                    )}
+                  </div>
+                  {job.error_msg && (
+                    <p className="text-xs text-red-600 mt-1 break-all">{job.error_msg}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {cronLastFetch && (
+          <p className="text-xs text-gray-300 mt-3 text-right">
+            Cập nhật lúc {cronLastFetch.toLocaleTimeString('vi-VN')}
+          </p>
+        )}
       </div>
 
       {/* QR Preview */}

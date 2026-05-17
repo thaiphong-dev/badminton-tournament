@@ -122,28 +122,56 @@ export function addPoint(state, scorerId) {
         newState.p2PlayerR = state.p2PlayerL
         newState.p2PlayerL = state.p2PlayerR
       }
-      // Receiver remains the person in the box matching server's box (diagonal)
-      // Actually, in BWF, the receiver doesn't change until the serving side changes.
-      // But they switch boxes internally because the server switched.
-      // So the same person receives but in the other box.
+    } else {
+      // Singles: server moves to correct service court (even → R, odd → L)
+      // Receiver mirrors server's side (diagonal = same pos label)
+      const p1Name = state.p1PlayerR ?? state.p1PlayerL
+      const p2Name = state.p2PlayerR ?? state.p2PlayerL
+      if (isP1Scorer) {
+        newState.p1PlayerR = even ? p1Name : null
+        newState.p1PlayerL = even ? null   : p1Name
+        newState.serverPlayer = p1Name
+        newState.p2PlayerR   = even ? p2Name : null
+        newState.p2PlayerL   = even ? null   : p2Name
+      } else {
+        newState.p2PlayerR = even ? p2Name : null
+        newState.p2PlayerL = even ? null   : p2Name
+        newState.serverPlayer = p2Name
+        newState.p1PlayerR   = even ? p1Name : null
+        newState.p1PlayerL   = even ? null   : p1Name
+      }
     }
   } else {
     // Receiving side won rally -> they serve, no position switch
     newState.serverId = scorerId
     if (state.isDoubles) {
       // The player in the box corresponding to their new team score serves.
-      newState.serverPlayer = isP1Scorer 
+      newState.serverPlayer = isP1Scorer
         ? (even ? newState.p1PlayerR : newState.p1PlayerL)
         : (even ? newState.p2PlayerR : newState.p2PlayerL)
-      
-      // The other side becomes receiving side. 
-      // The receiver is whoever is NOT serving and is in the correct box.
-      // Actually BWF receiver logic is: team that is receiving stays in their positions.
-      // The player in the box corresponding to the server's box receives.
+
       const serverBox = even ? 'R' : 'L'
       newState.receiverPlayer = isP1Scorer
         ? (serverBox === 'R' ? newState.p2PlayerR : newState.p2PlayerL)
         : (serverBox === 'R' ? newState.p1PlayerR : newState.p1PlayerL)
+    } else {
+      // Singles: new server positioned by their new score parity
+      // Receiver mirrors server's side (diagonal = same pos label)
+      const p1Name = state.p1PlayerR ?? state.p1PlayerL
+      const p2Name = state.p2PlayerR ?? state.p2PlayerL
+      if (isP1Scorer) {
+        newState.p1PlayerR = even ? p1Name : null
+        newState.p1PlayerL = even ? null   : p1Name
+        newState.serverPlayer = p1Name
+        newState.p2PlayerR   = even ? p2Name : null
+        newState.p2PlayerL   = even ? null   : p2Name
+      } else {
+        newState.p2PlayerR = even ? p2Name : null
+        newState.p2PlayerL = even ? null   : p2Name
+        newState.serverPlayer = p2Name
+        newState.p1PlayerR   = even ? p1Name : null
+        newState.p1PlayerL   = even ? null   : p1Name
+      }
     }
   }
 
@@ -228,6 +256,24 @@ export function startNextSet(state, firstServerId, firstServerPlayer = null, fir
         newState.p2PlayerL = newState.p2PlayerR
         newState.p2PlayerR = firstServerPlayer
       }
+    }
+  }
+
+  // Singles: position first server at R (score 0 = even → right court)
+  // Receiver mirrors server's side
+  if (!state.isDoubles && firstServerId) {
+    const serverName = firstServerPlayer
+      ?? (firstServerId === 'p1' ? (newState.p1PlayerR ?? newState.p1PlayerL) : (newState.p2PlayerR ?? newState.p2PlayerL))
+    const receiverName = firstServerId === 'p1'
+      ? (newState.p2PlayerR ?? newState.p2PlayerL)
+      : (newState.p1PlayerR ?? newState.p1PlayerL)
+    newState.serverPlayer = serverName
+    if (firstServerId === 'p1') {
+      newState.p1PlayerR = serverName; newState.p1PlayerL = null
+      newState.p2PlayerR = receiverName; newState.p2PlayerL = null
+    } else {
+      newState.p2PlayerR = serverName; newState.p2PlayerL = null
+      newState.p1PlayerR = receiverName; newState.p1PlayerL = null
     }
   }
 

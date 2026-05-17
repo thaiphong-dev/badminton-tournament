@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFeatures } from '@/lib/hooks/useFeatures'
 import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList, Grid, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { showToast } from '@/lib/hooks/useApiError'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { exportScheduleToExcel } from '@/lib/utils/exportResults'
 import { calculateStandings } from '@/lib/utils/standingsCalculator'
@@ -118,10 +119,10 @@ export default function GroupStagePage() {
       const gMatches = matches.filter(m => m.group_id === g.id)
       const completed = gMatches.filter(m => m.status === 'completed').length
       const total     = gMatches.length
-      const standings = calculateStandings(gMatches, gPlayers)
+      const standings = calculateStandings(gMatches, gPlayers, { tiebreakerMode: event?.tiebreaker_mode ?? 'bwf' })
       return { ...g, players: gPlayers, matches: gMatches, completed, total, standings }
     })
-  }, [groups, matches])
+  }, [groups, matches, event?.tiebreaker_mode])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   function handleMatchSaved(updatedMatch) {
@@ -132,6 +133,18 @@ export default function GroupStagePage() {
   function handleCourtMatchUpdated(updatedMatch) {
     setMatches(prev => prev.map(m => m.id === updatedMatch.id ? updatedMatch : m))
   }
+
+  // NR10: nhắc BTC khi tất cả trận vòng bảng xong
+  const hasToastedAllDone = useRef(false)
+  useEffect(() => { hasToastedAllDone.current = false }, [id])
+  useEffect(() => {
+    if (!matches.length || hasToastedAllDone.current) return
+    const allDone = matches.every(m => m.status === 'completed' || m.status === 'bye' || m.is_forfeit)
+    if (allDone) {
+      hasToastedAllDone.current = true
+      showToast('✓ Tất cả trận vòng bảng đã xong! Sẵn sàng chuyển sang knockout.', 'success')
+    }
+  }, [matches]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scoring rule for the currently open match (uses event config when available)
   const scoringRules = event?.scoring_rules ?? null

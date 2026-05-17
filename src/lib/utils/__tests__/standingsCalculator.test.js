@@ -157,4 +157,86 @@ describe('validateMatchScores', () => {
     expect(r.valid).toBe(true)
     expect(r.winner).toBe(1)
   })
+
+  it('player 2 wins single-game', () => {
+    const r = validateMatchScores([15], [21], 'group')
+    expect(r.valid).toBe(true)
+    expect(r.winner).toBe(2)
+  })
+
+  it('invalid: 4 sets provided in best-of-3', () => {
+    const r = validateMatchScores([15, 10, 15, 12], [10, 15, 10, 15], 'final')
+    expect(r.valid).toBe(false)
+  })
+
+  it('invalid: 2 sets played but neither player won 2 (each won 1)', () => {
+    const r = validateMatchScores([15, 10], [10, 15], 'final')
+    expect(r.valid).toBe(false)
+    expect(r.error).toMatch(/chưa có người thắng 2 set/i)
+  })
+
+  it('invalid: best-of-3 set score insufficient', () => {
+    const r = validateMatchScores([14, 15], [10, 8], 'final')
+    expect(r.valid).toBe(false)
+    expect(r.error).toMatch(/Set 1/)
+  })
+
+  it('isBestOf3:false ignores final stage default', () => {
+    const r = validateMatchScores([21], [15], 'final', { isBestOf3: false, pointsPerSet: 21 })
+    expect(r.valid).toBe(true)
+    expect(r.winner).toBe(1)
+  })
+})
+
+// ── calculateStandings: additional coverage ───────────────────────────────────
+
+describe('calculateStandings — tiebreaker modes', () => {
+  const players = [makePlayer('A', 'A'), makePlayer('B', 'B'), makePlayer('C', 'C')]
+
+  // Circular 3-way tie: A>B 21-15, B>C 21-16, C>A 21-18
+  // H2H score_diff: A=+3, B=-1, C=-2
+  const circularMatches = [
+    makeMatch('m1', 'A', 'B', 'A', [21], [15]),
+    makeMatch('m2', 'B', 'C', 'B', [21], [16]),
+    makeMatch('m3', 'C', 'A', 'C', [21], [18]),
+  ]
+
+  it('bwf mode: phân hạng theo H2H score_diff', () => {
+    const result = calculateStandings(circularMatches, players, { tiebreakerMode: 'bwf' })
+    expect(result[0].player_id).toBe('A')
+    expect(result[1].player_id).toBe('B')
+    expect(result[2].player_id).toBe('C')
+  })
+
+  it('sets_first mode: dùng overall score_diff khi sets bằng nhau', () => {
+    const result = calculateStandings(circularMatches, players, { tiebreakerMode: 'sets_first' })
+    expect(result[0].player_id).toBe('A')
+  })
+
+  it('h2h_score_first mode: dùng H2H score trước sets', () => {
+    const result = calculateStandings(circularMatches, players, { tiebreakerMode: 'h2h_score_first' })
+    expect(result[0].player_id).toBe('A')
+    expect(result[1].player_id).toBe('B')
+  })
+
+  it('mặc định dùng bwf khi không truyền tiebreakerMode', () => {
+    const def = calculateStandings(circularMatches, players)
+    const bwf = calculateStandings(circularMatches, players, { tiebreakerMode: 'bwf' })
+    expect(def.map(s => s.player_id)).toEqual(bwf.map(s => s.player_id))
+  })
+})
+
+describe('calculateStandings — JSON string score parsing', () => {
+  it('xử lý player1_scores là JSON string thay vì Array', () => {
+    const players = [makePlayer('a', 'A'), makePlayer('b', 'B')]
+    const match = {
+      id: 'm1', player1_id: 'a', player2_id: 'b', winner_id: 'a',
+      player1_scores: '[21]', player2_scores: '[10]', status: 'completed',
+    }
+    const result = calculateStandings([match], players)
+    const a = result.find(r => r.player_id === 'a')
+    expect(a.wins).toBe(1)
+    expect(a.score_for).toBe(21)
+    expect(a.score_against).toBe(10)
+  })
 })

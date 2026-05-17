@@ -50,7 +50,7 @@ function SlimActionBtn({ team, flash, onTap }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════ */
-export default function ScoringScreen({ state, player1, player2, onPoint, onUndo, onRedo, onShuttle, onEndMatch, onStatChange, onAppealLogged, onInjuryTimeout }) {
+export default function ScoringScreen({ state, player1, player2, onPoint, onUndo, onRedo, onShuttle, onShuttleRequest, onEndMatch, onStatChange, onAppealLogged, onInjuryTimeout }) {
   const [confirmEnd,   setConfirmEnd]   = useState(false)
   const [flash,        setFlash]        = useState(null)
   const [floatingPoint, setFloatingPoint] = useState(null)
@@ -132,7 +132,7 @@ export default function ScoringScreen({ state, player1, player2, onPoint, onUndo
           onClick={() => setShowShuttleModal(true)} 
           className={state.shuttleCount > 0 ? 'active-tint' : ''}
         />
-        <ActionBtnSquare icon={<MessageSquare size={22} className="text-cyan-400" />} />
+        <ActionBtnSquare icon={<MessageSquare size={22} className="text-cyan-400" />} onClick={() => onShuttleRequest?.()} />
         <ActionBtnSquare icon={<AppealIcon size={22} className="text-cyan-400" />} />
       </div>
 
@@ -184,9 +184,9 @@ export default function ScoringScreen({ state, player1, player2, onPoint, onUndo
     <div className="court-container">
       <CourtLines isLandscape={isLandscape} />
       <CourtPlayer name={state.p1PlayerR} team="p1" pos="R" isServer={serverId === 'p1' && serverPlayer === state.p1PlayerR} isTop={!sidesSwapped} isLandscape={isLandscape} />
-      {isDoubles && <CourtPlayer name={state.p1PlayerL} team="p1" pos="L" isServer={serverId === 'p1' && serverPlayer === state.p1PlayerL} isTop={!sidesSwapped} isLandscape={isLandscape} />}
+      <CourtPlayer name={state.p1PlayerL} team="p1" pos="L" isServer={serverId === 'p1' && serverPlayer === state.p1PlayerL} isTop={!sidesSwapped} isLandscape={isLandscape} />
       <CourtPlayer name={state.p2PlayerR} team="p2" pos="R" isServer={serverId === 'p2' && serverPlayer === state.p2PlayerR} isTop={sidesSwapped} isLandscape={isLandscape} />
-      {isDoubles && <CourtPlayer name={state.p2PlayerL} team="p2" pos="L" isServer={serverId === 'p2' && serverPlayer === state.p2PlayerL} isTop={sidesSwapped} isLandscape={isLandscape} />}
+      <CourtPlayer name={state.p2PlayerL} team="p2" pos="L" isServer={serverId === 'p2' && serverPlayer === state.p2PlayerL} isTop={sidesSwapped} isLandscape={isLandscape} />
 
       {floatingPoint && (
         <div key={floatingPoint.id} className="animate-point-up" style={{ top: floatingPoint.team === topTeam ? '20%' : '80%' }}>

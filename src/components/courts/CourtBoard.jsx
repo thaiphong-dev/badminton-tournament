@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight, ShieldCheck, PhoneOff, Clock } from 'lucide-react'
+import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight, ShieldCheck, PhoneOff, Clock, AlertTriangle, PhoneCall, RotateCcw, WifiOff, Phone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useBTCRealtime } from '@/lib/hooks/useBTCRealtime'
+import { showToast } from '@/lib/hooks/useApiError'
 import { cn } from '@/lib/utils/cn'
-import { generateSchedule } from '@/lib/utils/courtScheduler'
+import { generateSchedule, formatWaveTime } from '@/lib/utils/courtScheduler'
+import { sendPush } from '@/lib/utils/sendPush'
 import Button from '@/components/ui/Button'
 import ScoreModal from '@/components/shared/ScoreModal'
 
-export default function CourtBoard({ event, matches, playerMap, scoringRules, onMatchUpdated, onRefresh, umpireMap = {}, onAssignUmpire = null, tournamentId }) {
+export default function CourtBoard({ event, matches, playerMap, scoringRules, onMatchUpdated, onRefresh, umpireMap = {}, onAssignUmpire = null, tournamentId, onExternalMatchUpdate = null }) {
   const { profile } = useAuth()
   const numCourts = event?.num_courts ?? 2
 
@@ -17,23 +19,44 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   const [applying,         setApplying]         = useState(false)
   const [editingCourtNum,  setEditingCourtNum]  = useState(null)
   const [callingMatchIds,  setCallingMatchIds]  = useState(new Set()) // Set<matchId> — 1 BTC có thể gọi nhiều sân cùng lúc
-  const [toast,            setToast]            = useState(null) // { message, type, id }
   const [liveStats,        setLiveStats]        = useState({})   // { [matchId]: match_stats row }
+  const [shuttleQueue,     setShuttleQueue]     = useState([])   // [{ courtNumber, umpireName }, ...]
+  const [now,              setNow]              = useState(() => Date.now())
+  const [callAthleteModal, setCallAthleteModal] = useState(null) // { results, courtNum } | null
+  const seenShuttleRef = useRef(new Set())                       // dedup: "${matchId}_${timestamp}"
+
+  // Tick every 15 s — quarter of heartbeat interval for responsive staleness display
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000)
+    return () => clearInterval(id)
+  }, [])
+
+  function playShuttleBeep() {
+    try {
+      const AudioCtx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext
+      const ctx = new AudioCtx()
+      const beep = (freq, startTime) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.35, startTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12)
+        osc.start(startTime)
+        osc.stop(startTime + 0.12)
+      }
+      const t = ctx.currentTime
+      beep(880, t)
+      beep(660, t + 0.18)
+      setTimeout(() => { try { ctx.close() } catch { /* noop */ } }, 600)
+    } catch { /* browser không support AudioContext */ }
+  }
 
   // Box callingMatchIds into ref so useBTCRealtime callback never goes stale
   const callingRef = useRef(callingMatchIds)
   useLayoutEffect(() => { callingRef.current = callingMatchIds })
-
-  // Auto-dismiss toast after 4 s — depend on toast object so deps are complete
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 4000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  function showToast(message, type = 'success') {
-    setToast({ message, type, id: Date.now() })
-  }
 
   // ── BTC Realtime ───────────────────────────────────────────────────────────
 
@@ -44,6 +67,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
 
   const handleMatchUpdate = useCallback((updatedMatch) => {
     onMatchUpdated(updatedMatch)
+    onExternalMatchUpdate?.(updatedMatch)
     const calling = callingRef.current
 
     if (updatedMatch.status === 'active' && calling.has(updatedMatch.id)) {
@@ -58,9 +82,26 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
       const label = updatedMatch.match_number ? `Trận ${updatedMatch.match_number}` : 'Trận'
       showToast(`✓ ${label} đã kết thúc`, 'success')
     }
-  }, [onMatchUpdated])
 
-  useBTCRealtime(tournamentId, handleMatchUpdate, handleStatsUpdate)
+    // Shuttle request: chỉ xử lý nếu request mới (< 5 phút) và chưa seen
+    if (updatedMatch.shuttle_request_at) {
+      const key = `${updatedMatch.id}_${updatedMatch.shuttle_request_at}`
+      const ageMs = Date.now() - new Date(updatedMatch.shuttle_request_at).getTime()
+      if (ageMs < 300_000 && !seenShuttleRef.current.has(key)) {
+        seenShuttleRef.current.add(key)
+        setShuttleQueue(prev => {
+          if (prev.length === 0) playShuttleBeep()
+          return [...prev, {
+            matchId:     updatedMatch.id,
+            courtNumber: updatedMatch.court_number,
+            umpireName:  umpireMap[updatedMatch.umpire_id]?.name ?? 'Trọng tài',
+          }]
+        })
+      }
+    }
+  }, [onMatchUpdated, onExternalMatchUpdate, umpireMap])
+
+  useBTCRealtime(tournamentId, handleMatchUpdate, handleStatsUpdate, '-board')
 
   // ── Wave analysis ──────────────────────────────────────────────────────────
   const scheduledMatches = useMemo(
@@ -98,6 +139,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   // ── Edit operations ────────────────────────────────────────────────────────
 
   async function handleUnschedule(matchId) {
+    if (!window.confirm('Bỏ trận này khỏi lịch? Trận sẽ trở về danh sách chưa lập lịch.')) return
     const { data: updated, error } = await supabase
       .from('matches')
       .update({ court_number: null, wave_number: null })
@@ -164,7 +206,16 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
     if (matchRes.error) {
       console.error('handleStartMatch (calling):', matchRes.error)
       setCallingMatchIds(prev => { const s = new Set(prev); s.delete(match.id); return s })
+      return
     }
+
+    // Push notification to umpire — best-effort, does not block if they have no subscription
+    sendPush(
+      match.umpire_id,
+      '📞 Vào sân ngay!',
+      `Sân ${courtNum} đang gọi bạn vào điều hành.`,
+      `/umpire/match/${match.id}`,
+    )
   }
 
   async function handleCancelCall(matchId) {
@@ -182,6 +233,92 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   function handleMatchSaved(updatedMatch) {
     onMatchUpdated(updatedMatch)
     setScoreMatch(null)
+  }
+
+  async function handleRecall(match, courtNum) {
+    // Set status back to 'calling' so:
+    // - umpires with app open → realtime fires the calling overlay immediately
+    // - umpires who reopen the app → see calling state on their match list
+    const now = new Date().toISOString()
+    const { data: updated } = await supabase
+      .from('matches')
+      .update({ status: 'calling', call_started_at: now })
+      .eq('id', match.id)
+      .select()
+      .single()
+    if (updated) onMatchUpdated(updated)
+
+    // Push notification for browsers running in the background
+    sendPush(
+      match.umpire_id,
+      '📞 Vào sân ngay!',
+      `BTC đang gọi bạn quay lại sân ${courtNum} — trận vẫn đang tiếp diễn.`,
+      `/umpire/match/${match.id}`,
+    )
+    showToast('Đã gọi lại trọng tài', 'success')
+  }
+
+  async function handleCallAthletes(match, courtNum) {
+    const p1 = playerMap[match.player1_id]
+    const p2 = playerMap[match.player2_id]
+    const entries = [p1, p2].filter(Boolean)
+    const athleteIds = [...new Set(entries.map(p => p.athlete_id).filter(Boolean))]
+
+    const [subsRes, profilesRes] = await Promise.all([
+      athleteIds.length
+        ? supabase.from('push_subscriptions').select('user_id').in('user_id', athleteIds)
+        : Promise.resolve({ data: [] }),
+      athleteIds.length
+        ? supabase.from('profiles').select('id, phone').in('id', athleteIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    const subscribedIds = new Set((subsRes.data ?? []).map(s => s.user_id))
+    const phoneMap = Object.fromEntries((profilesRes.data ?? []).map(p => [p.id, p.phone]))
+
+    for (const id of athleteIds) {
+      if (subscribedIds.has(id)) {
+        sendPush(id, '📞 Vào sân ngay!', `Sân ${courtNum} đang gọi bạn vào thi đấu!`, '/')
+      }
+    }
+
+    const results = entries.map(player => ({
+      name:            player.name ?? '?',
+      hasAccount:      !!player.athlete_id,
+      hasSubscription: player.athlete_id ? subscribedIds.has(player.athlete_id) : false,
+      phone:           player.athlete_id ? (phoneMap[player.athlete_id] ?? null) : null,
+    }))
+
+    if (results.every(r => r.hasSubscription)) {
+      showToast(`Đã gửi thông báo đến ${results.length} VĐV`, 'success')
+    } else {
+      setCallAthleteModal({ results, courtNum })
+    }
+  }
+
+  async function handleReset(matchId) {
+    if (!window.confirm('Đặt lại trận về chờ bắt đầu? Toàn bộ điểm hiện tại sẽ bị xoá.')) return
+    const { data: updated, error } = await supabase
+      .from('matches')
+      .update({
+        status:              'pending',
+        live_score_p1:       0,
+        live_score_p2:       0,
+        live_set_p1:         0,
+        live_set_p2:         0,
+        current_set:         1,
+        player1_scores:      [],
+        player2_scores:      [],
+        call_started_at:     null,
+        match_started_at:    null,
+        umpire_heartbeat_at: null,
+        winner_id:           null,
+      })
+      .eq('id', matchId)
+      .select()
+      .single()
+    if (!error) onMatchUpdated(updated)
+    else console.error('handleReset:', error)
   }
 
   // ── Auto-scheduler ─────────────────────────────────────────────────────────
@@ -214,23 +351,80 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
   const hasSchedule = allWaves.length > 0
   const waveIdx     = allWaves.indexOf(effectiveWave)
 
+  // Compute estimated start time for a wave number (requires event.schedule_start_time)
+  function waveDisplayTime(waveNum) {
+    if (!event?.schedule_start_time) return null
+    const startWave = allWaves[0] ?? 1
+    const durMins   = event.wave_duration_minutes ?? 45
+    const base      = new Date(event.schedule_start_time).getTime()
+    const offsetMs  = (waveNum - startWave) * durMins * 60 * 1000
+    return formatWaveTime(new Date(base + offsetMs).toISOString())
+  }
+  const isWaveComplete = useMemo(
+    () => {
+      const wms = scheduledMatches.filter(m => m.wave_number === effectiveWave)
+      return wms.length > 0 && wms.every(m => m.status === 'completed')
+    },
+    [scheduledMatches, effectiveWave],
+  )
+  const nextWave = allWaves[waveIdx + 1] ?? null
+
   return (
     <div className="space-y-4 p-5">
 
-      {/* ── Toast ── */}
-      {toast && (
-        <div
-          className={cn(
-            'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-xl text-sm font-semibold flex items-center gap-2 transition-all',
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-amber-500 text-white',
-          )}
-        >
-          {toast.message}
-          <button onClick={() => setToast(null)} className="ml-1 opacity-70 hover:opacity-100">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {/* ── Shuttle Request Modal (queue) ── */}
+      {shuttleQueue.length > 0 && (() => {
+        const current = shuttleQueue[0]
+        const remaining = shuttleQueue.length
+        const dismiss = () => setShuttleQueue(prev => prev.slice(1))
+        const confirmShuttle = async () => {
+          if (current.matchId) {
+            supabase.from('matches').update({ shuttle_request_at: null }).eq('id', current.matchId)
+          }
+          dismiss()
+        }
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-gray-900 text-base">
+                      Sân {current.courtNumber} đã hết cầu.
+                    </p>
+                    {remaining > 1 && (
+                      <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        {remaining} yêu cầu
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Trọng tài <span className="font-semibold text-gray-700">{current.umpireName}</span> điều hành.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={dismiss}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Bỏ qua
+                </button>
+                <button
+                  onClick={confirmShuttle}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors"
+                >
+                  {remaining > 1 ? `Xác nhận (còn ${remaining - 1})` : 'Xác nhận'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
 
       {/* ── Wave timeline ── */}
       {hasSchedule && (
@@ -271,6 +465,9 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
                     )}
                   >
                     <span>Lượt {w}</span>
+                    {waveDisplayTime(w) && (
+                      <span className="text-[10px] opacity-70 font-normal">{waveDisplayTime(w)}</span>
+                    )}
                     <span className="mt-0.5">
                       {done ? '✓' : hasActive ? '●' : `${wms.filter(m => m.status === 'completed').length}/${wms.length}`}
                     </span>
@@ -321,10 +518,15 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
                 onSwapWith={(otherMatch) => match && handleSwapCourts(match, otherMatch)}
                 onAssign={(unscheduledMatch) => handleAssignToSlot(unscheduledMatch.id, courtNum, effectiveWave)}
                 onCancelCall={() => match && handleCancelCall(match.id)}
+                onRecall={() => match && handleRecall(match, courtNum)}
+                onReset={() => match && handleReset(match.id)}
+                onCallAthletes={() => match && handleCallAthletes(match, courtNum)}
+                now={now}
                 umpireName={match ? (umpireMap[match.umpire_id]?.name ?? null) : null}
                 onAssignUmpire={onAssignUmpire && match ? () => onAssignUmpire(match) : null}
                 callingDisabled={false}
                 matchStats={match ? (liveStats[match.id] ?? null) : null}
+                currentUserId={profile?.id ?? null}
               />
             )
           })}
@@ -344,6 +546,19 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
               Lập lịch tự động
             </Button>
           )}
+        </div>
+      )}
+
+      {/* ── Wave complete banner ── */}
+      {isWaveComplete && nextWave && (
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-green-800">✓ Lượt {effectiveWave} đã hoàn thành</p>
+            <p className="text-xs text-green-600 mt-0.5">Sẵn sàng chuyển sang lượt tiếp theo</p>
+          </div>
+          <Button onClick={() => setSelectedWave(nextWave)} variant="secondary" className="shrink-0">
+            Lượt {nextWave} →
+          </Button>
         </div>
       )}
 
@@ -390,6 +605,15 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
           onSaved={handleMatchSaved}
         />
       )}
+
+      {/* ── Call Athlete Modal ── */}
+      {callAthleteModal && (
+        <CallAthleteModal
+          courtNum={callAthleteModal.courtNum}
+          results={callAthleteModal.results}
+          onClose={() => setCallAthleteModal(null)}
+        />
+      )}
     </div>
   )
 }
@@ -401,8 +625,10 @@ function CourtSlot({
   attendanceEnabled = false,
   isEditing, otherPendingSlots, pendingUnscheduled,
   onEditToggle, onStart, onScore, onUnschedule, onSwapWith, onAssign, onCancelCall,
+  onRecall = null, onReset = null, onCallAthletes = null,
+  now = Date.now(),
   umpireName = null, onAssignUmpire = null, callingDisabled = false,
-  matchStats = null,
+  matchStats = null, currentUserId = null,
 }) {
   const p1        = match ? (playerMap[match.player1_id] ?? { name: '?' }) : null
   const p2        = match ? (playerMap[match.player2_id] ?? { name: '?' }) : null
@@ -410,7 +636,18 @@ function CourtSlot({
   const isDone    = match?.status === 'completed'
   const isPending = match?.status === 'pending'
   const isCalling = match?.status === 'calling'
-  const canEdit   = isPending && !isCalling
+  const canEdit   = !match || (isPending && !isCalling)
+  const isStuck   = isActive && match?.started_at &&
+    (Date.now() - new Date(match.started_at).getTime()) > 90 * 60 * 1000
+
+  const heartbeatStaleMs = isActive && match?.umpire_heartbeat_at
+    ? now - new Date(match.umpire_heartbeat_at).getTime()
+    : null
+  const heartbeatStaleSecs = heartbeatStaleMs !== null ? Math.floor(heartbeatStaleMs / 1000) : null
+  // 60 s = 2 missed heartbeats at the 30 s interval → consider disconnected
+  const heartbeatLost = isActive && match?.umpire_id && (
+    heartbeatStaleMs === null || heartbeatStaleMs >= 60_000
+  )
 
   const p1Att = attendanceEnabled ? (playerMap[match?.player1_id]?.attendance ?? 'present') : 'present'
   const p2Att = attendanceEnabled ? (playerMap[match?.player2_id]?.attendance ?? 'present') : 'present'
@@ -440,7 +677,12 @@ function CourtSlot({
         )}
         <span className="flex-1 text-center">
           Sân {courtNum}
-          {isActive   && !isEditing && <span className="font-normal text-xs ml-1 opacity-90">● Đang đấu</span>}
+          {isActive   && !isEditing && (
+            <>
+              <span className="font-normal text-xs ml-1 opacity-90">● Đang đấu</span>
+              {isStuck && <span className="font-normal text-xs ml-1 text-red-200">⚠ &gt;90ph</span>}
+            </>
+          )}
           {isCalling  && !isEditing && <span className="font-normal text-xs ml-1 opacity-90">📞 Đang kết nối trọng tài</span>}
           {isDone     && !isEditing && <span className="font-normal text-xs ml-1 opacity-80">✓ Xong</span>}
           {isEditing               && <span className="font-normal text-xs ml-1 opacity-90">— Đang chỉnh</span>}
@@ -496,6 +738,17 @@ function CourtSlot({
               <div className="text-xs text-gray-300">vs</div>
               <PlayerRow name={p2?.name ?? '?'} club={p2?.club} highlight={isDone && match.winner_id === match.player2_id} />
             </div>
+
+            {/* Call athletes — visible on all non-completed matches */}
+            {!isDone && onCallAthletes && (
+              <button
+                onClick={onCallAthletes}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 text-xs font-medium rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors"
+              >
+                <Phone className="w-3 h-3" />
+                Gọi VĐV vào sân
+              </button>
+            )}
 
             {/* Status-specific content */}
             {isDone && (
@@ -579,6 +832,51 @@ function CourtSlot({
                   )
                 })()}
 
+                {isStuck && (
+                  <div className="mb-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    Trận chạy hơn 90 phút — cần kiểm tra
+                  </div>
+                )}
+
+                {/* Live heartbeat indicator — shows when umpire app is connected */}
+                {!heartbeatLost && match.umpire_id && heartbeatStaleSecs !== null && (
+                  <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                      App trọng tài đang kết nối
+                    </span>
+                    <span>{heartbeatStaleSecs}s trước</span>
+                  </div>
+                )}
+
+                {heartbeatLost && match.umpire_id && (
+                  <div className="mb-2 rounded-lg border border-yellow-300 bg-yellow-50 px-2.5 py-2 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs text-yellow-700 font-semibold">
+                      <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                      {heartbeatStaleSecs !== null
+                        ? `Ứng dụng trọng tài mất kết nối ${heartbeatStaleSecs >= 60 ? `${Math.floor(heartbeatStaleSecs / 60)} phút` : `${heartbeatStaleSecs}s`}`
+                        : 'Chưa nhận tín hiệu từ ứng dụng trọng tài'}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={onRecall}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-md bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
+                      >
+                        <PhoneCall className="w-3 h-3" />
+                        Gọi lại
+                      </button>
+                      <button
+                        onClick={onReset}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Đánh lại
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={onScore}
                   className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
@@ -624,6 +922,15 @@ function CourtSlot({
               )
             )}
 
+            {/* Umpire evaluation */}
+            {isDone && umpireName && currentUserId && (
+              <UmpireEvaluationWidget
+                matchId={match.id}
+                umpireId={match.umpire_id}
+                currentUserId={currentUserId}
+              />
+            )}
+
             {/* Umpire row */}
             {onAssignUmpire && (
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
@@ -645,6 +952,110 @@ function CourtSlot({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── UmpireEvaluationWidget ───────────────────────────────────────────────────
+
+function UmpireEvaluationWidget({ matchId, umpireId, currentUserId }) {
+  const [ratingDone,  setRatingDone]  = useState(null)   // null = loading, false = not done, object = done
+  const [open,        setOpen]        = useState(false)
+  const [hovered,     setHovered]     = useState(0)
+  const [selected,    setSelected]    = useState(0)
+  const [comment,     setComment]     = useState('')
+  const [submitting,  setSubmitting]  = useState(false)
+
+  useEffect(() => {
+    supabase
+      .from('umpire_evaluations')
+      .select('rating, comment')
+      .eq('match_id', matchId)
+      .maybeSingle()
+      .then(({ data }) => setRatingDone(data ?? false))
+  }, [matchId])
+
+  async function handleSubmit() {
+    if (!selected) return
+    setSubmitting(true)
+    const { error } = await supabase.from('umpire_evaluations').insert({
+      match_id:     matchId,
+      umpire_id:    umpireId,
+      evaluated_by: currentUserId,
+      rating:       selected,
+      comment:      comment.trim() || null,
+    })
+    setSubmitting(false)
+    if (!error) {
+      setRatingDone({ rating: selected, comment: comment.trim() || null })
+      setOpen(false)
+      showToast('✓ Đã đánh giá', 'success')
+    }
+  }
+
+  if (ratingDone === null) return null   // still loading — render nothing
+
+  return (
+    <div className="mt-2 pt-2 border-t border-gray-100">
+      {ratingDone ? (
+        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="text-yellow-400 tracking-tight">
+            {'★'.repeat(ratingDone.rating)}{'☆'.repeat(5 - ratingDone.rating)}
+          </span>
+          {ratingDone.comment && (
+            <span className="text-gray-400 truncate italic">"{ratingDone.comment}"</span>
+          )}
+        </div>
+      ) : !open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium px-1.5 py-0.5 rounded hover:bg-amber-50 transition-colors"
+        >
+          ⭐ Đánh giá TT
+        </button>
+      ) : (
+        <div className="space-y-1.5">
+          {/* Star selector */}
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map(n => (
+              <span
+                key={n}
+                onMouseEnter={() => setHovered(n)}
+                onMouseLeave={() => setHovered(0)}
+                onClick={() => setSelected(n)}
+                className="cursor-pointer text-lg leading-none select-none"
+                style={{ color: n <= (hovered || selected) ? '#f59e0b' : '#d1d5db' }}
+              >
+                ★
+              </span>
+            ))}
+          </div>
+          {/* Comment */}
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value.slice(0, 100))}
+            placeholder="Nhận xét (tuỳ chọn)"
+            rows={2}
+            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1 resize-none focus:outline-none focus:border-amber-300"
+          />
+          {/* Actions */}
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => { setOpen(false); setSelected(0); setComment('') }}
+              className="flex-1 py-1 text-xs rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              Huỷ
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!selected || submitting}
+              className="flex-1 py-1 text-xs rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {submitting ? '...' : 'Gửi'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -728,6 +1139,85 @@ function PlayerRow({ name, club, highlight }) {
     <div>
       <p className={cn('text-sm', highlight ? 'font-bold text-gray-900' : 'text-gray-700')}>{name}</p>
       {club && <p className="text-xs text-gray-400">{club}</p>}
+    </div>
+  )
+}
+
+// ─── CallAthleteModal ─────────────────────────────────────────────────────────
+
+function CallAthleteModal({ courtNum, results, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl w-full max-w-sm shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Phone className="w-4 h-4 text-indigo-600" />
+            <h3 className="font-semibold text-gray-900">Gọi VĐV — Sân {courtNum}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Results */}
+        <div className="px-5 py-4 space-y-3">
+          {results.map((r, i) => (
+            <div key={i} className="flex items-start gap-3">
+              {/* Status icon */}
+              <div className={cn(
+                'w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-sm',
+                r.hasSubscription ? 'bg-green-100' : r.hasAccount ? 'bg-amber-100' : 'bg-gray-100',
+              )}>
+                {r.hasSubscription ? '✅' : r.hasAccount ? '🔕' : '👤'}
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{r.name}</p>
+                {r.hasSubscription ? (
+                  <p className="text-xs text-green-600 mt-0.5">Đã gửi thông báo</p>
+                ) : r.hasAccount ? (
+                  <p className="text-xs text-amber-600 mt-0.5">Chưa bật thông báo — gọi thủ công</p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-0.5">Chưa có tài khoản — gọi thủ công</p>
+                )}
+                {/* Phone link */}
+                {!r.hasSubscription && r.phone && (
+                  <a
+                    href={`tel:${r.phone}`}
+                    className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                  >
+                    <Phone className="w-3 h-3" />
+                    {r.phone}
+                  </a>
+                )}
+                {!r.hasSubscription && !r.phone && (
+                  <p className="text-xs text-gray-300 mt-0.5 italic">Không có số điện thoại</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-5 pb-4">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

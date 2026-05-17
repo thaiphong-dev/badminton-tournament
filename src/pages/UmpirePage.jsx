@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useUmpireRealtime } from '@/lib/hooks/useUmpireRealtime'
-import { ShieldCheck, ChevronRight, Loader2, LogOut, ChevronLeft, Trophy, Clock, CheckCircle2, Zap, AlertCircle } from 'lucide-react'
+import { ShieldCheck, ChevronRight, Loader2, LogOut, ChevronLeft, Trophy, Clock, CheckCircle2, Zap, AlertCircle, History } from 'lucide-react'
+import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
 
 
 const STAGE_LABELS = {
@@ -23,6 +24,7 @@ export default function UmpirePage() {
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
 
+  const [view, setView]                     = useState('assigned') // 'assigned' | 'history'
   const [tournaments, setTournaments]       = useState([])
   const [selectedTmt, setSelectedTmt]       = useState(null)
   const [matches, setMatches]               = useState([])
@@ -30,6 +32,10 @@ export default function UmpirePage() {
   const [loadingTmt, setLoadingTmt]         = useState(true)
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [error, setError]                   = useState(null)
+
+  // History state
+  const [history, setHistory]               = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   function retryLoadTournaments() {
     setError(null)
@@ -76,6 +82,35 @@ export default function UmpirePage() {
       .catch(() => { setError('Lỗi kết nối. Vui lòng thử lại.'); setLoadingMatches(false) })
   }, [selectedTmt, profile])
 
+  // Lịch sử: load tất cả completed matches của umpire này
+  useEffect(() => {
+    if (!profile?.id || view !== 'history') return
+    setLoadingHistory(true)
+    supabase
+      .from('matches')
+      .select(`
+        id, stage, match_number, status, player1_scores, player2_scores, winner_id, updated_at,
+        tournaments(id, name),
+        p1:players!player1_id(id, name),
+        p2:players!player2_id(id, name)
+      `)
+      .eq('umpire_id', profile.id)
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+      .limit(100)
+      .then(async ({ data, error: err }) => {
+        if (err || !data?.length) { setHistory(data || []); setLoadingHistory(false); return }
+        const matchIds = data.map(m => m.id)
+        const { data: evals } = await supabase
+          .from('umpire_evaluations')
+          .select('match_id, rating, comment')
+          .in('match_id', matchIds)
+        const evalMap = Object.fromEntries((evals ?? []).map(e => [e.match_id, e]))
+        setHistory(data.map(m => ({ ...m, evaluation: evalMap[m.id] ?? null })))
+        setLoadingHistory(false)
+      })
+  }, [profile?.id, view])
+
   // Subscribe realtime: incoming call overlay + live match status updates
   useUmpireRealtime(profile?.id, matches, playerMap, setMatches)
 
@@ -86,6 +121,7 @@ export default function UmpirePage() {
 
   const liveCount = matches.filter(m => m.status === 'active').length
   const pendingCount = matches.filter(m => m.status === 'pending').length
+  const urgentMatch = matches.find(m => m.status === 'calling' || m.status === 'active')
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#0f172a' }}>
@@ -115,21 +151,163 @@ export default function UmpirePage() {
               )}
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors active:bg-white/5"
-            style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Đăng xuất
-          </button>
+          <div className="flex items-center gap-2">
+            <PushSubscribeButton userId={profile?.id} className="text-white/40 hover:text-white/70" />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors active:bg-white/5"
+              style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-6">
 
-        {/* ── Tournament list ── */}
+        {/* ── Urgent match banner — shown whenever any assigned match needs attention ── */}
+        {urgentMatch && (
+          <button
+            onClick={() => navigate(`/umpire/match/${urgentMatch.id}`)}
+            className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 mb-4 text-left transition-all active:scale-[0.99] animate-pulse"
+            style={{
+              background: urgentMatch.status === 'calling'
+                ? 'rgba(245,158,11,0.15)'
+                : 'rgba(34,211,238,0.12)',
+              border: `1px solid ${urgentMatch.status === 'calling' ? 'rgba(245,158,11,0.4)' : 'rgba(34,211,238,0.35)'}`,
+            }}
+          >
+            <span style={{ fontSize: 20 }}>
+              {urgentMatch.status === 'calling' ? '📞' : '🏸'}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p style={{ fontSize: 13, fontWeight: 700, color: urgentMatch.status === 'calling' ? '#fbbf24' : '#22d3ee' }}>
+                {urgentMatch.status === 'calling' ? 'BTC đang gọi bạn vào sân!' : 'Trận đang diễn ra — tiếp tục điều hành'}
+              </p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>
+                {playerMap[urgentMatch.player1_id]?.name ?? '?'} vs {playerMap[urgentMatch.player2_id]?.name ?? '?'}
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }} />
+          </button>
+        )}
+
+        {/* ── View toggle (only when on tournament list, not inside a tournament) ── */}
         {!selectedTmt && (
+          <div className="flex mb-6 rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <button
+              onClick={() => setView('assigned')}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold transition-colors"
+              style={{
+                background: view === 'assigned' ? 'rgba(34,211,238,0.12)' : 'transparent',
+                color: view === 'assigned' ? '#22d3ee' : 'rgba(255,255,255,0.35)',
+              }}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Phân công
+            </button>
+            <button
+              onClick={() => setView('history')}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold transition-colors"
+              style={{
+                background: view === 'history' ? 'rgba(34,211,238,0.12)' : 'transparent',
+                color: view === 'history' ? '#22d3ee' : 'rgba(255,255,255,0.35)',
+                borderLeft: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              <History className="w-4 h-4" />
+              Lịch sử
+            </button>
+          </div>
+        )}
+
+        {/* ── History view ── */}
+        {!selectedTmt && view === 'history' && (
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#f1f5f9', marginBottom: 16 }}>
+              Lịch sử điều hành
+            </h2>
+            {loadingHistory ? (
+              <div className="flex justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#22d3ee' }} />
+              </div>
+            ) : history.length === 0 ? (
+              <div className="text-center py-16">
+                <History className="w-10 h-10 mx-auto mb-3" style={{ color: 'rgba(255,255,255,0.15)' }} />
+                <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>Chưa có trận nào đã điều hành</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {history.map(m => {
+                  const p1Won = m.winner_id === m.p1?.id
+                  const p2Won = m.winner_id === m.p2?.id
+                  const date  = m.updated_at
+                    ? new Date(m.updated_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                    : ''
+                  const scoreStr = m.player1_scores?.length
+                    ? m.player1_scores.map((s, i) => `${s}–${(m.player2_scores ?? [])[i] ?? 0}`).join('  ')
+                    : null
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-2xl px-4 py-4"
+                      style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.07)' }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {m.tournaments?.name ?? '—'}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{date}</span>
+                      </div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                          {STAGE_LABELS[m.stage] ?? m.stage}{m.match_number ? ` · #${m.match_number}` : ''}
+                        </span>
+                        <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#34d399' }} />
+                      </div>
+                      <div className="space-y-1 mt-2">
+                        <div className="flex items-center justify-between">
+                          <span style={{ fontSize: 13, fontWeight: p1Won ? 700 : 400, color: p1Won ? '#22d3ee' : 'rgba(255,255,255,0.6)' }}>
+                            {m.p1?.name ?? 'TBD'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span style={{ fontSize: 13, fontWeight: p2Won ? 700 : 400, color: p2Won ? '#fbbf24' : 'rgba(255,255,255,0.6)' }}>
+                            {m.p2?.name ?? 'TBD'}
+                          </span>
+                          {scoreStr && (
+                            <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+                              {scoreStr}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {m.evaluation && (
+                        <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                          <div className="flex items-center gap-1.5">
+                            <span style={{ fontSize: 13, color: '#fbbf24', letterSpacing: '-0.5px' }}>
+                              {'★'.repeat(m.evaluation.rating)}{'☆'.repeat(5 - m.evaluation.rating)}
+                            </span>
+                            {m.evaluation.comment && (
+                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
+                                "{m.evaluation.comment}"
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tournament list ── */}
+        {!selectedTmt && view === 'assigned' && (
           <div>
             <div className="mb-6">
               <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f1f5f9', marginBottom: 4 }}>Giải đấu của bạn</h2>

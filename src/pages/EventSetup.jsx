@@ -7,6 +7,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { FORMAT_OPTIONS, FORMAT_LABELS } from '@/lib/constants'
 import { isValidBracketSize, nextPowerOfTwo } from '@/lib/utils/eventHelpers'
+import { useI18n } from '@/i18n'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Breadcrumb from '@/components/layout/Breadcrumb'
@@ -56,7 +57,7 @@ function Section({ icon, title, children }) {
 }
 
 // ── Scoring rule sub-form ─────────────────────────────────────────────────────
-function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChange }) {
+function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChange, ptsLabel }) {
   return (
     <div className="flex items-center gap-4 py-3 border-b border-gray-50 last:border-0">
       <span className="text-sm text-gray-600 w-40 shrink-0">{label}</span>
@@ -82,7 +83,7 @@ function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChang
             />
             <span className="text-xs text-gray-300" style={{ fontSize: 10 }}>1–99</span>
           </div>
-          <span className="text-xs text-gray-400">điểm / set</span>
+          <span className="text-xs text-gray-400">{ptsLabel}</span>
         </div>
       </div>
     </div>
@@ -93,6 +94,7 @@ function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChang
 export default function EventSetup() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -119,6 +121,9 @@ export default function EventSetup() {
   const [lateSet, setLateSet]   = useState(3)
   const [latePts, setLatePts]   = useState(15)
   const [numCourts, setNumCourts] = useState(2)
+  const [tiebreakerMode,     setTiebreakerMode]     = useState('bwf')
+  const [scheduleStartTime,  setScheduleStartTime]  = useState('')
+  const [waveDurationMins,   setWaveDurationMins]   = useState(45)
 
   function hydrateForm(ev) {
     setFormat(ev.format ?? 'group_then_knockout')
@@ -127,6 +132,9 @@ export default function EventSetup() {
     setNumSecond(ev.num_second_place_qualify ?? 0)
     setRequirePlayerCode(ev.require_player_code ?? false)
     setAttendanceEnabled(ev.attendance_enabled ?? false)
+    setTiebreakerMode(ev.tiebreaker_mode ?? 'bwf')
+    setScheduleStartTime(ev.schedule_start_time ? ev.schedule_start_time.slice(0, 16) : '')
+    setWaveDurationMins(ev.wave_duration_minutes ?? 45)
 
     const sr = ev.scoring_rules ?? {}
     setGsSet(sr.group_stage?.sets ?? 1)
@@ -185,12 +193,15 @@ export default function EventSetup() {
           require_player_code:       requirePlayerCode,
           attendance_enabled:        attendanceEnabled,
           num_courts:                Number(numCourts),
+          tiebreaker_mode:           tiebreakerMode,
+          schedule_start_time:       scheduleStartTime || null,
+          wave_duration_minutes:     Number(waveDurationMins),
         })
         .eq('id', eventId)
       if (err) throw err
       setSaved(true)
     } catch (err) {
-      setError(`Lỗi lưu cấu hình: ${err.message}`)
+      setError(t('eventSetup.saveError', { msg: err.message }))
     } finally {
       setSaving(false)
     }
@@ -228,15 +239,17 @@ export default function EventSetup() {
     mens_doubles: '👥', womens_doubles: '👥', mixed_doubles: '🤝',
   }[event.discipline] ?? '🏸' : '🏸'
 
+  const ptsLabel = t('common.points')
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
       <Breadcrumb
         className="mb-6"
         items={[
-          { label: 'Trang chủ', href: '/' },
+          { label: t('common.home'), href: '/' },
           { label: tournament?.name ?? '…', href: `/tournament/${tournamentId}` },
           { label: event?.name ?? '…', href: `/tournament/${tournamentId}/event/${eventId}/setup` },
-          { label: 'Cấu hình' },
+          { label: t('eventSetup.breadcrumb') },
         ]}
       />
 
@@ -245,13 +258,13 @@ export default function EventSetup() {
         <span className="text-3xl leading-none">{disciplineIcon}</span>
         <div>
           <h1 className="text-xl font-bold text-gray-900">{event?.name}</h1>
-          <p className="text-sm text-gray-400">Cấu hình thể thức & luật thi đấu</p>
+          <p className="text-sm text-gray-400">{t('eventSetup.subtitle')}</p>
         </div>
       </div>
 
       <div className="space-y-4">
         {/* ── SECTION 1: Format ── */}
-        <Section icon={Settings} title="Thể thức tổng">
+        <Section icon={Settings} title={t('eventSetup.section.format')}>
           <RadioGroup
             options={[
               { value: FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT, label: FORMAT_LABELS.group_then_knockout },
@@ -262,12 +275,12 @@ export default function EventSetup() {
           />
         </Section>
 
-        {/* ── SECTION 2: Group config (only for group_then_knockout) ── */}
+        {/* ── SECTION 2: Group config ── */}
         {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
-          <Section icon={LayoutList} title="Cấu hình vòng bảng">
+          <Section icon={LayoutList} title={t('eventSetup.section.groupConfig')}>
             <div className="grid grid-cols-3 gap-4">
               <Input
-                label="Số bảng"
+                label={t('eventSetup.groups.numGroups')}
                 type="number"
                 min="1"
                 max="32"
@@ -275,14 +288,14 @@ export default function EventSetup() {
                 onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
               />
               <Input
-                label="Nhất bảng lấy"
+                label={t('eventSetup.groups.numFirst')}
                 type="number"
                 min="1"
                 value={numFirst}
                 onChange={e => { setNumFirst(e.target.value); setSaved(false) }}
               />
               <Input
-                label="Nhì tốt nhất lấy"
+                label={t('eventSetup.groups.numSecond')}
                 type="number"
                 min="0"
                 value={numSecond}
@@ -302,10 +315,13 @@ export default function EventSetup() {
                 : <Info className="w-4 h-4 mt-0.5 shrink-0" />
               }
               {bracketOk
-                ? <span>Tổng vào knockout: <strong>{totalQualify} VĐV</strong> — hợp lệ cho bracket</span>
+                ? <span>{t('eventSetup.groups.bracketOk', { n: totalQualify })}</span>
                 : <span>
-                    Tổng <strong>{totalQualify}</strong> không phải lũy thừa 2.
-                    Gợi ý: lấy <strong>{suggestedNext}</strong> người (hoặc {suggestedNext / 2}) để bracket đều.
+                    {t('eventSetup.groups.bracketBad', {
+                      n: totalQualify,
+                      suggested: suggestedNext,
+                      half: suggestedNext / 2,
+                    })}
                   </span>
               }
             </div>
@@ -313,21 +329,23 @@ export default function EventSetup() {
         )}
 
         {/* ── SECTION 3: Scoring rules ── */}
-        <Section icon={GitBranch} title="Luật thi đấu">
+        <Section icon={GitBranch} title={t('eventSetup.section.scoringRules')}>
           <div className="space-y-1">
             {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
               <ScoringRuleRow
-                label="Vòng bảng"
+                label={t('eventSetup.scoring.groupStage')}
                 sets={gsSet}
                 pointsPerSet={gsPts}
+                ptsLabel={ptsLabel}
                 onSetsChange={v => { setGsSet(v); setSaved(false) }}
                 onPointsChange={v => { setGsPts(v); setSaved(false) }}
               />
             )}
             <ScoringRuleRow
-              label="Knockout (vòng thường)"
+              label={t('eventSetup.scoring.knockoutRegular')}
               sets={regSet}
               pointsPerSet={regPts}
+              ptsLabel={ptsLabel}
               onSetsChange={v => { setRegSet(v); setSaved(false) }}
               onPointsChange={v => { setRegPts(v); setSaved(false) }}
             />
@@ -351,27 +369,28 @@ export default function EventSetup() {
                   )} />
                 </button>
                 <span className="text-sm font-medium text-gray-700">
-                  Áp dụng luật khác cho vòng cuối
+                  {t('eventSetup.scoring.lateRoundToggle')}
                 </span>
               </label>
 
               {useLate && (
                 <div className="mt-3 pl-11 space-y-3">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm text-gray-500 shrink-0">Áp dụng từ:</span>
+                    <span className="text-sm text-gray-500 shrink-0">{t('eventSetup.scoring.appliesFrom')}</span>
                     <RadioGroup
                       options={[
-                        { value: 'quarter',  label: 'Tứ kết'   },
-                        { value: 'semi',     label: 'Bán kết'  },
+                        { value: 'quarter', label: t('eventSetup.scoring.quarter') },
+                        { value: 'semi',    label: t('eventSetup.scoring.semi')    },
                       ]}
                       value={lateFrom}
                       onChange={v => { setLateFrom(v); setSaved(false) }}
                     />
                   </div>
                   <ScoringRuleRow
-                    label="Vòng cuối"
+                    label={t('eventSetup.scoring.lateRound')}
                     sets={lateSet}
                     pointsPerSet={latePts}
+                    ptsLabel={ptsLabel}
                     onSetsChange={v => { setLateSet(v); setSaved(false) }}
                     onPointsChange={v => { setLatePts(v); setSaved(false) }}
                   />
@@ -381,8 +400,65 @@ export default function EventSetup() {
           </div>
         </Section>
 
-        {/* ── SECTION: Chế độ chuyên nghiệp ── */}
-        <Section icon={Info} title="Chế độ thi đấu">
+        {/* ── SECTION: Tiebreaker ── */}
+        {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
+          <Section icon={GitBranch} title={t('eventSetup.section.tiebreaker')}>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  {t('eventSetup.tiebreaker.label')}
+                </label>
+                <select
+                  value={tiebreakerMode}
+                  onChange={e => { setTiebreakerMode(e.target.value); setSaved(false) }}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="bwf">{t('eventSetup.tiebreaker.bwf')}</option>
+                  <option value="sets_first">{t('eventSetup.tiebreaker.setsFirst')}</option>
+                  <option value="h2h_score_first">{t('eventSetup.tiebreaker.h2hScoreFirst')}</option>
+                </select>
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* ── SECTION: Schedule ── */}
+        <Section icon={GitBranch} title={t('eventSetup.section.schedule')}>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  {t('eventSetup.scheduleSection.startTimeLabel')}
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduleStartTime}
+                  onChange={e => { setScheduleStartTime(e.target.value); setSaved(false) }}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  {t('eventSetup.scheduleSection.durationLabel')}
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="240"
+                  value={waveDurationMins}
+                  onChange={e => { setWaveDurationMins(e.target.value); setSaved(false) }}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400">
+              {t('eventSetup.scheduleSection.hint')}
+            </p>
+          </div>
+        </Section>
+
+        {/* ── SECTION: Mode ── */}
+        <Section icon={Info} title={t('eventSetup.section.mode')}>
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <button
               type="button"
@@ -400,18 +476,18 @@ export default function EventSetup() {
               )} />
             </button>
             <div>
-              <p className="text-sm font-medium text-gray-700">Giải chuyên nghiệp — yêu cầu mã số VĐV</p>
+              <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.requireCode')}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {requirePlayerCode
-                  ? 'File import phải có cột "Mã số" (CCCD / ID). Dùng mã này làm định danh duy nhất.'
-                  : 'Giải phong trào — không cần mã số, nhập tên tự do.'}
+                  ? t('eventSetup.mode.requireCodeOn')
+                  : t('eventSetup.mode.requireCodeOff')}
               </p>
             </div>
           </label>
         </Section>
 
-        {/* ── SECTION: Điểm danh ── */}
-        <Section icon={ClipboardList} title="Điểm danh">
+        {/* ── SECTION: Attendance ── */}
+        <Section icon={ClipboardList} title={t('eventSetup.section.attendance')}>
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <button
               type="button"
@@ -429,21 +505,21 @@ export default function EventSetup() {
               )} />
             </button>
             <div>
-              <p className="text-sm font-medium text-gray-700">Bật bước điểm danh trước khi thi đấu</p>
+              <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.attendanceOn')}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {attendanceEnabled
-                  ? 'Các trận đấu sẽ bị khóa cho đến khi VĐV được đánh dấu có mặt. VĐV vắng mặt sẽ bị xử thua W/O ở tất cả các trận của họ.'
-                  : 'Tất cả VĐV tự động được coi là có mặt — bỏ qua bước điểm danh.'}
+                  ? t('eventSetup.mode.attendanceOnHint')
+                  : t('eventSetup.mode.attendanceOff')}
               </p>
             </div>
           </label>
         </Section>
 
-        {/* ── SECTION: Sân đấu ── */}
-        <Section icon={Grid} title="Sân đấu">
+        {/* ── SECTION: Courts ── */}
+        <Section icon={Grid} title={t('eventSetup.section.courts')}>
           <div className="flex items-center gap-5">
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Số sân thi đấu</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">{t('eventSetup.courts.numCourts')}</p>
               <input
                 type="number"
                 min="1"
@@ -454,7 +530,7 @@ export default function EventSetup() {
               />
             </div>
             <p className="text-xs text-gray-400 pt-5">
-              Dùng để lập lịch tự động và hiển thị trên bảng sân đấu
+              {t('eventSetup.courts.hint')}
             </p>
           </div>
         </Section>
@@ -469,17 +545,17 @@ export default function EventSetup() {
         {saved && !error && (
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700">
             <CheckCircle className="w-4 h-4 shrink-0" />
-            Đã lưu cấu hình thành công
+            {t('eventSetup.savedOk')}
           </div>
         )}
 
         {/* ── Actions ── */}
         <div className="flex items-center justify-between pt-2">
           <Button variant="secondary" onClick={handleSave} loading={saving}>
-            Lưu cấu hình
+            {t('eventSetup.saveBtn')}
           </Button>
           <Button onClick={handleSaveAndNext} loading={saving}>
-            Tiếp theo: Import VĐV
+            {t('eventSetup.nextBtn')}
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>

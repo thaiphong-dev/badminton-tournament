@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { usePlan } from '@/lib/hooks/usePlan'
 import { useFeatures } from '@/lib/hooks/useFeatures'
 import { useFeatureRegistry } from '@/lib/hooks/useFeatureRegistry'
-import { STATUS_LABELS } from '@/lib/constants'
+import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -33,6 +33,7 @@ export default function Home() {
   const { planData } = usePlan()
   const { features: activeFeatureKeys } = useFeatures()
   const { getAllFeatures } = useFeatureRegistry()
+  const { t, lang } = useI18n()
 
   const [tournaments, setTournaments]   = useState([])
   const [loading, setLoading]           = useState(true)
@@ -42,20 +43,18 @@ export default function Home() {
   const [search, setSearch]             = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  // Creator subscription widget data
   const [activeSub, setActiveSub] = useState(null)
   const [subLoading, setSubLoading] = useState(false)
 
   const isCreator = role === 'creator'
   const isAdmin   = role === 'admin'
-  const isPublic  = !profile  // unauthenticated
+  const isPublic  = !profile
   const isAthlete = role === 'athlete' || role === 'umpire'
 
   const maxTournaments    = planData?.plan?.max_tournaments ?? null
   const activeTournaments = planData?.active_tournament_count ?? 0
   const atTournamentLimit = isCreator && maxTournaments !== null && activeTournaments >= maxTournaments
 
-  // Load creator subscription info
   useEffect(() => {
     if (!isCreator || !profile?.id) return
     setSubLoading(true)
@@ -92,10 +91,8 @@ export default function Home() {
       if (isCreator && profile?.id) {
         query = query.eq('creator_id', profile.id)
       } else if (isPublic || isAthlete) {
-        // Public and athlete: only show registration-open tournaments
         query = query.eq('registration_open', true)
       }
-      // admin: no filter → all tournaments
 
       if (statusFilter !== 'all' && (isCreator || isAdmin)) {
         query = query.eq('status', statusFilter)
@@ -106,7 +103,7 @@ export default function Home() {
       setTournaments(data || [])
       setTotal(count ?? 0)
     } catch {
-      setError('Không thể tải danh sách giải đấu.')
+      setError(t('common.error'))
     } finally {
       setLoading(false)
     }
@@ -118,7 +115,6 @@ export default function Home() {
     window.scrollTo(0, 0)
   }
 
-  // Client-side search filter
   const displayed = tournaments.filter(t => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
@@ -134,23 +130,23 @@ export default function Home() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-      {/* ── Header by role ── */}
+      {/* Header by role */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div>
           {isPublic || isAthlete ? (
             <>
-              <h1 className="text-2xl font-bold text-gray-900">Tìm giải đấu cầu lông</h1>
-              <p className="text-gray-500 mt-1">Khám phá các giải đấu đang mở đăng ký</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t('home.titlePublic')}</h1>
+              <p className="text-gray-500 mt-1">{t('home.subtitlePublic')}</p>
             </>
           ) : isCreator ? (
             <>
-              <h1 className="text-2xl font-bold text-gray-900">Giải đấu của tôi</h1>
-              <p className="text-gray-500 mt-1">Giải đấu do bạn tạo và quản lý</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t('home.titleCreator')}</h1>
+              <p className="text-gray-500 mt-1">{t('home.subtitleCreator')}</p>
             </>
           ) : (
             <>
-              <h1 className="text-2xl font-bold text-gray-900">Tất cả giải đấu</h1>
-              <p className="text-gray-500 mt-1">Toàn bộ giải đấu trên hệ thống</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t('home.titleAdmin')}</h1>
+              <p className="text-gray-500 mt-1">{t('home.subtitleAdmin')}</p>
             </>
           )}
         </div>
@@ -163,7 +159,7 @@ export default function Home() {
               title={`Đã đạt giới hạn ${activeTournaments}/${maxTournaments} giải. Nâng cấp để tạo thêm.`}
             >
               <Plus className="w-4 h-4" />
-              Tạo giải ({activeTournaments}/{maxTournaments}) →
+              {t('home.createLimited', { used: activeTournaments, max: maxTournaments })}
             </Link>
           ) : (
             <Link
@@ -171,7 +167,7 @@ export default function Home() {
               className="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Tạo giải đấu mới
+              {t('home.createBtn')}
             </Link>
           )
         )}
@@ -181,26 +177,26 @@ export default function Home() {
             onClick={() => navigate('/athlete')}
             className="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
           >
-            Đăng ký của tôi <ArrowRight className="w-4 h-4" />
+            {t('home.myRegistrations')} <ArrowRight className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      {/* ── Creator subscription widget ── */}
+      {/* Creator subscription widget */}
       {isCreator && !subLoading && (
         <div className="mb-5 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 text-sm">
-              <span className="text-gray-500">Gói của bạn:</span>
+              <span className="text-gray-500">{t('home.plan')}</span>
               <span className="font-semibold text-gray-900">
-                {activeSub?.plan?.name ?? 'Miễn phí'}
+                {activeSub?.plan?.name ?? t('home.freePlan')}
               </span>
               {activeSub?.expires_at && d !== null && (
                 <span className={cn(
                   'text-xs px-2 py-0.5 rounded-full font-medium',
                   d <= 7 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700',
                 )}>
-                  Còn {d} ngày
+                  {t('home.daysLeft', { days: d })}
                 </span>
               )}
               {!activeSub && (
@@ -213,7 +209,7 @@ export default function Home() {
               to="/plans"
               className="text-xs text-blue-600 hover:underline font-medium shrink-0"
             >
-              {!activeSub || activeSub?.plan?.slug === 'free' ? 'Nâng cấp →' : 'Gia hạn / Đổi gói →'}
+              {!activeSub || activeSub?.plan?.slug === 'free' ? t('home.upgrade') : t('home.renewUpgrade')}
             </Link>
           </div>
           {getAllFeatures().length > 0 && (
@@ -237,21 +233,19 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Search + Filter ── */}
+      {/* Search + Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        {/* Search — show for all roles */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Tìm theo tên giải, địa điểm..."
+            placeholder={t('home.searchPlaceholder')}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
-        {/* Status filter — only for creator/admin */}
         {(isCreator || isAdmin) && (
           <div className="flex gap-1 flex-wrap">
             {['all', 'setup', 'group_stage', 'knockout', 'completed'].map(s => (
@@ -265,14 +259,14 @@ export default function Home() {
                     : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
                 )}
               >
-                {s === 'all' ? 'Tất cả' : STATUS_LABELS[s] ?? s}
+                {s === 'all' ? t('common.all') : t('status.' + s) || s}
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {/* ── Content ── */}
+      {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center py-24">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -281,16 +275,16 @@ export default function Home() {
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <p className="text-red-700">{error}</p>
           <button onClick={() => fetchTournaments(page)} className="mt-3 text-sm text-red-600 underline">
-            Thử lại
+            {t('common.retry')}
           </button>
         </div>
       ) : displayed.length === 0 ? (
-        <EmptyState role={role} profile={profile} search={search} />
+        <EmptyState role={role} profile={profile} search={search} t={t} />
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {displayed.map(t => (
-              <TournamentCard key={t.id} tournament={t} isPublic={isPublic} />
+            {displayed.map(tournament => (
+              <TournamentCard key={tournament.id} tournament={tournament} isPublic={isPublic} t={t} lang={lang} />
             ))}
           </div>
 
@@ -300,31 +294,29 @@ export default function Home() {
 
           {search && (
             <p className="text-center text-xs text-gray-400 mt-4">
-              Hiển thị {displayed.length} / {total} giải đấu
+              {t('home.showingCount', { shown: displayed.length, total })}
             </p>
           )}
         </>
       )}
 
-      {/* ── CTA for unauthenticated ── */}
+      {/* CTA for unauthenticated */}
       {isPublic && (
         <div className="mt-12 bg-blue-50 border border-blue-100 rounded-2xl p-8 text-center">
-          <h3 className="font-bold text-gray-900 mb-2">Bạn muốn tổ chức giải đấu?</h3>
-          <p className="text-gray-500 text-sm mb-5">
-            Đăng ký tài khoản Creator miễn phí và tổ chức giải đấu cầu lông của bạn ngay hôm nay.
-          </p>
+          <h3 className="font-bold text-gray-900 mb-2">{t('home.ctaTitle')}</h3>
+          <p className="text-gray-500 text-sm mb-5">{t('home.ctaSubtitle')}</p>
           <div className="flex items-center justify-center gap-3">
             <Link
               to="/register"
               className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
             >
-              Đăng ký miễn phí
+              {t('home.ctaRegister')}
             </Link>
             <Link
               to="/plans"
               className="px-5 py-2.5 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
             >
-              Xem bảng giá
+              {t('home.ctaViewPricing')}
             </Link>
           </div>
         </div>
@@ -333,14 +325,12 @@ export default function Home() {
   )
 }
 
-// ── Tournament card ───────────────────────────────────────────────────────────
-
-function TournamentCard({ tournament: t, isPublic }) {
-  const eventCount = t.events?.[0]?.count ?? 0
+function TournamentCard({ tournament: trn, isPublic, t, lang }) {
+  const eventCount = trn.events?.[0]?.count ?? 0
 
   return (
     <Link
-      to={`/tournament/${t.id}`}
+      to={`/tournament/${trn.id}`}
       className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition-all group flex flex-col"
     >
       <div className="flex items-start justify-between mb-3">
@@ -348,56 +338,54 @@ function TournamentCard({ tournament: t, isPublic }) {
           <Trophy className="w-5 h-5 text-blue-600" />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {t.registration_open && (
+          {trn.registration_open && (
             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-              Mở đăng ký
+              {t('home.openRegistration')}
             </span>
           )}
-          <Badge variant={STATUS_BADGE_VARIANT[t.status] || 'default'}>
-            {STATUS_LABELS[t.status] || t.status}
+          <Badge variant={STATUS_BADGE_VARIANT[trn.status] || 'default'}>
+            {t('status.' + trn.status) || trn.status}
           </Badge>
         </div>
       </div>
 
       <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
-        {t.name}
+        {trn.name}
       </h3>
 
-      {t.location && (
+      {trn.location && (
         <p className="text-xs text-gray-400 flex items-center gap-1 mb-1">
-          <MapPin className="w-3 h-3" /> {t.location}
+          <MapPin className="w-3 h-3" /> {trn.location}
         </p>
       )}
 
       <div className="flex items-center gap-4 text-sm text-gray-500 mt-auto pt-3">
         <span className="flex items-center gap-1">
           <Layers className="w-4 h-4" />
-          {eventCount} nội dung
+          {t('home.eventCount', { n: eventCount })}
         </span>
         <span className="flex items-center gap-1">
           <Calendar className="w-4 h-4" />
-          {t.start_date
-            ? new Date(t.start_date).toLocaleDateString('vi-VN')
-            : new Date(t.created_at).toLocaleDateString('vi-VN')}
+          {trn.start_date
+            ? new Date(trn.start_date).toLocaleDateString(lang === 'en' ? 'en-GB' : 'vi-VN')
+            : new Date(trn.created_at).toLocaleDateString(lang === 'en' ? 'en-GB' : 'vi-VN')}
         </span>
       </div>
 
-      {isPublic && t.registration_open && (
+      {isPublic && trn.registration_open && (
         <p className="text-xs text-blue-600 font-medium mt-3">
-          Đăng nhập để đăng ký tham gia →
+          {t('home.loginToRegister')}
         </p>
       )}
 
       {!isPublic && (
         <div className="flex items-center justify-end mt-3 text-blue-600 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-          Xem tổng quan <ChevronRight className="w-4 h-4 ml-0.5" />
+          {t('home.viewOverview')} <ChevronRight className="w-4 h-4 ml-0.5" />
         </div>
       )}
     </Link>
   )
 }
-
-// ── Pagination ────────────────────────────────────────────────────────────────
 
 function Pagination({ page, totalPages, onChange }) {
   return (
@@ -443,15 +431,13 @@ function Pagination({ page, totalPages, onChange }) {
   )
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-function EmptyState({ role, profile, search }) {
+function EmptyState({ role, profile, search, t }) {
   const isPublic  = !profile
   const isCreator = role === 'creator' || role === 'admin'
 
   if (search) return (
     <div className="text-center py-16 text-gray-400 text-sm">
-      Không tìm thấy giải đấu nào khớp với "{search}"
+      {t('home.noTournamentsSearch', { q: search })}
     </div>
   )
 
@@ -461,23 +447,23 @@ function EmptyState({ role, profile, search }) {
         <Trophy className="w-8 h-8 text-blue-400" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 mb-2">
-        {isPublic ? 'Chưa có giải đấu nào đang mở đăng ký' : 'Chưa có giải đấu nào'}
+        {isPublic ? t('home.noTournamentsPublic') : t('home.noTournaments')}
       </h3>
       {isCreator ? (
         <>
-          <p className="text-gray-500 mb-6">Tạo giải đấu đầu tiên của bạn để bắt đầu</p>
+          <p className="text-gray-500 mb-6">{t('home.createFirstPrompt')}</p>
           <Link
             to="/tournament/create"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Tạo giải đấu mới
+            {t('home.createBtn')}
           </Link>
         </>
       ) : isPublic ? (
-        <p className="text-gray-500">Hãy quay lại sau hoặc đăng ký để theo dõi.</p>
+        <p className="text-gray-500">{t('home.comeBackLaterPublic')}</p>
       ) : (
-        <p className="text-gray-500">Hãy quay lại sau khi có giải đấu mở đăng ký.</p>
+        <p className="text-gray-500">{t('home.comeBackLater')}</p>
       )}
     </div>
   )

@@ -17,11 +17,11 @@ function limitLabel(v) {
 export default function PlansTab({ adminId }) {
   const [plans, setPlans]     = useState([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(null) // null | 'new' | plan obj
+  const [editing, setEditing] = useState(null)
   const [saving, setSaving]   = useState(false)
   const [saveErr, setSaveErr] = useState(null)
   const { getAllFeatures } = useFeatureRegistry()
-  const featuresList = getAllFeatures() // [{ key, label, ... }]
+  const featuresList = getAllFeatures()
 
   const fetchPlans = useCallback(async () => {
     const { data } = await supabase
@@ -55,7 +55,7 @@ export default function PlansTab({ adminId }) {
   async function handleSave(form) {
     setSaving(true)
     setSaveErr(null)
-    const { error } = await supabase.rpc('admin_upsert_plan', {
+    const { data: planId, error } = await supabase.rpc('admin_upsert_plan', {
       p_admin_id:    adminId,
       p_plan_id:     form.id ?? null,
       p_name:        form.name.trim(),
@@ -69,8 +69,22 @@ export default function PlansTab({ adminId }) {
       p_is_active:   form.is_active,
       p_sort_order:  parseInt(form.sort_order) || 0,
     })
+    if (error) { setSaving(false); setSaveErr(error.message); return }
+
+    // Save i18n fields via direct update (RPC doesn't include them)
+    const targetId = planId ?? form.id
+    if (targetId) {
+      await supabase
+        .from('subscription_plans')
+        .update({
+          name_en:        form.name_en?.trim() || null,
+          description_vi: form.description_vi?.trim() || null,
+          description_en: form.description_en?.trim() || null,
+        })
+        .eq('id', targetId)
+    }
+
     setSaving(false)
-    if (error) { setSaveErr(error.message); return }
     setEditing(null)
     fetchPlans()
   }
@@ -99,10 +113,12 @@ export default function PlansTab({ adminId }) {
               plan.is_active ? 'border-gray-200' : 'border-gray-100 opacity-55'
             )}
           >
-            {/* Header */}
             <div className="flex items-start justify-between mb-3">
               <div>
                 <h3 className="font-semibold text-gray-900">{plan.name}</h3>
+                {plan.name_en && (
+                  <p className="text-xs text-blue-500 font-medium mt-0.5">EN: {plan.name_en}</p>
+                )}
                 <p className="text-xs text-gray-400 font-mono mt-0.5">{plan.slug}</p>
               </div>
               <span className={cn(
@@ -113,20 +129,29 @@ export default function PlansTab({ adminId }) {
               </span>
             </div>
 
-            {/* Price */}
             <p className="text-2xl font-bold text-blue-600">{formatPrice(plan.price)}</p>
             <p className="text-xs text-gray-400 mt-0.5 mb-3">
               {plan.duration_days ? `${plan.duration_days} ngày` : 'Vĩnh viễn'}
             </p>
 
-            {/* Limits */}
+            {/* Descriptions */}
+            {(plan.description_vi || plan.description_en) && (
+              <div className="mb-3 space-y-1">
+                {plan.description_vi && (
+                  <p className="text-xs text-gray-500 line-clamp-2">🇻🇳 {plan.description_vi}</p>
+                )}
+                {plan.description_en && (
+                  <p className="text-xs text-gray-500 line-clamp-2">🇬🇧 {plan.description_en}</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1 text-xs text-gray-600 mb-3">
               <p>Giải đấu: <span className="font-semibold text-gray-800">{limitLabel(plan.max_tournaments)}</span></p>
               <p>VĐV/giải: <span className="font-semibold text-gray-800">{limitLabel(plan.max_players)}</span></p>
               <p>Nội dung/giải: <span className="font-semibold text-gray-800">{limitLabel(plan.max_events)}</span></p>
             </div>
 
-            {/* Features */}
             {plan.features?.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-4">
                 {plan.features.map(f => (
@@ -137,7 +162,6 @@ export default function PlansTab({ adminId }) {
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex gap-2 mt-auto pt-3">
               <button
                 onClick={() => { setEditing(plan); setSaveErr(null) }}
@@ -183,6 +207,7 @@ function PlanFormModal({ plan, featuresList = [], saving, error, onSave, onClose
   const [form, setForm] = useState({
     id:              plan?.id ?? null,
     name:            plan?.name ?? '',
+    name_en:         plan?.name_en ?? '',
     slug:            plan?.slug ?? '',
     price:           plan?.price ?? 0,
     duration:        plan?.duration_days ?? '',
@@ -192,6 +217,8 @@ function PlanFormModal({ plan, featuresList = [], saving, error, onSave, onClose
     features:        plan?.features ?? [],
     is_active:       plan?.is_active ?? true,
     sort_order:      plan?.sort_order ?? 0,
+    description_vi:  plan?.description_vi ?? '',
+    description_en:  plan?.description_en ?? '',
   })
 
   function setF(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
@@ -217,10 +244,17 @@ function PlanFormModal({ plan, featuresList = [], saving, error, onSave, onClose
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3 max-h-[68vh] overflow-y-auto">
-          <Field label="Tên gói *">
-            <input value={form.name} onChange={e => setF('name', e.target.value)} className={inputCls} placeholder="Cơ bản" />
-          </Field>
+        <div className="px-5 py-4 space-y-3 max-h-[72vh] overflow-y-auto">
+
+          {/* Names — VI + EN side by side */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tên gói (VI) *">
+              <input value={form.name} onChange={e => setF('name', e.target.value)} className={inputCls} placeholder="Cơ bản" />
+            </Field>
+            <Field label="Plan name (EN)">
+              <input value={form.name_en} onChange={e => setF('name_en', e.target.value)} className={inputCls} placeholder="Basic" />
+            </Field>
+          </div>
 
           <Field label={`Slug * ${plan ? '(không thể đổi)' : ''}`}>
             <input
@@ -229,6 +263,26 @@ function PlanFormModal({ plan, featuresList = [], saving, error, onSave, onClose
               disabled={!!plan}
               className={cn(inputCls, plan && 'bg-gray-50 text-gray-400 cursor-not-allowed')}
               placeholder="basic"
+            />
+          </Field>
+
+          {/* Descriptions */}
+          <Field label="Mô tả (VI)">
+            <textarea
+              value={form.description_vi}
+              onChange={e => setF('description_vi', e.target.value)}
+              rows={2}
+              className={cn(inputCls, 'resize-none')}
+              placeholder="Phù hợp cho BTC tổ chức giải nhỏ..."
+            />
+          </Field>
+          <Field label="Description (EN)">
+            <textarea
+              value={form.description_en}
+              onChange={e => setF('description_en', e.target.value)}
+              rows={2}
+              className={cn(inputCls, 'resize-none')}
+              placeholder="Ideal for organising small tournaments..."
             />
           </Field>
 
@@ -255,7 +309,7 @@ function PlanFormModal({ plan, featuresList = [], saving, error, onSave, onClose
 
           <Field label="Tính năng">
             {featuresList.length === 0 ? (
-              <p className="text-xs text-gray-400 mt-1">Chưa có tính năng nào trong registry. Thêm tại tab Cài đặt.</p>
+              <p className="text-xs text-gray-400 mt-1">Chưa có tính năng nào trong registry.</p>
             ) : (
               <div className="flex flex-wrap gap-2 mt-1">
                 {featuresList.map(f => (

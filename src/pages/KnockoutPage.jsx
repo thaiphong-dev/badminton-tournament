@@ -107,7 +107,9 @@ export default function KnockoutPage() {
     }
   }, [id, eventId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useBTCRealtime(id, handleRealtimeMatchUpdate)
+  // Khi CourtBoard đang hiện (activeStage==='courts'), nó đã subscribe với '-board' suffix
+  // và sẽ gọi handleRealtimeMatchUpdate qua onExternalMatchUpdate — tránh 2 subscriptions song song.
+  useBTCRealtime(activeStage !== 'courts' ? id : null, handleRealtimeMatchUpdate)
 
   async function fetchUmpireMap() {
     const { data } = await supabase
@@ -711,6 +713,8 @@ export default function KnockoutPage() {
               onRefresh={fetchAll}
               umpireMap={umpireMap}
               onAssignUmpire={canUseUmpire ? setAssignMatch : null}
+              tournamentId={id}
+              onExternalMatchUpdate={handleRealtimeMatchUpdate}
             />
           ) : activeStage === 'final' ? (
             <FinalsView
@@ -862,16 +866,18 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
   const forfeitLoser = forfeitLoserId ? (playerMap[forfeitLoserId] ?? null) : null
 
   return (
-    <button
+    <div
       onClick={canClick ? onClick : undefined}
-      disabled={!canClick}
+      role={canClick ? 'button' : undefined}
+      tabIndex={canClick ? 0 : undefined}
+      onKeyDown={canClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick?.() } : undefined}
       className={cn(
         'group w-full text-left border-2 rounded-xl p-4 transition-all',
         highlight && !isForfeit && 'border-yellow-300 bg-yellow-50',
         isForfeit && 'border-orange-200 bg-orange-50/30',
         isAttendanceLocked && 'border-amber-200 bg-amber-50/30',
         !highlight && !isForfeit && !isAttendanceLocked && done && 'border-green-200 bg-green-50/40 hover:border-blue-300 hover:bg-blue-50',
-        !highlight && !isForfeit && !isAttendanceLocked && !done && canClick && 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm',
+        !highlight && !isForfeit && !isAttendanceLocked && !done && canClick && 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm cursor-pointer',
         !highlight && !isForfeit && !isAttendanceLocked && !done && !canClick && 'border-dashed border-gray-200 bg-gray-50 cursor-default opacity-60',
       )}
     >
@@ -979,7 +985,7 @@ function KnockoutMatchCard({ match, label, playerMap, onClick, highlight = false
           ) : null}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 

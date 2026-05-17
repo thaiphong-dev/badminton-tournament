@@ -30,7 +30,8 @@ export default function UmpireMatchPage() {
   const [player1, setPlayer1] = useState(null)
   const [player2, setPlayer2] = useState(null)
   const [gameState, setGameState] = useState(null)
-  const [pendingRestore, setPendingRestore] = useState(null) // { savedGs, freshGs }
+  const [pendingRestore, setPendingRestore]     = useState(null) // { savedGs, freshGs }
+  const [pendingDBRestore, setPendingDBRestore] = useState(null) // { dbGs, freshGs }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState(null)
@@ -80,6 +81,30 @@ export default function UmpireMatchPage() {
         }
       } catch {}
 
+      // DB restore: no localStorage but match is active and DB has scores
+      if (m.status === 'active') {
+        const hasDbScores = (m.live_score_p1 > 0 || m.live_score_p2 > 0 || (m.player1_scores?.length ?? 0) > 0)
+        if (hasDbScores) {
+          const completedSets = (m.player1_scores || []).map((s, i) => ({
+            p1: s,
+            p2: (m.player2_scores || [])[i] ?? 0,
+          }))
+          const dbGs = {
+            ...freshGs,
+            completedSets,
+            currentSetP1: m.live_score_p1 ?? 0,
+            currentSetP2: m.live_score_p2 ?? 0,
+            currentSet:   m.current_set ?? (completedSets.length + 1),
+            startedAt:    new Date().toISOString(),
+            phase:        'confirm',
+            isRestore:    true,
+          }
+          setPendingDBRestore({ dbGs, freshGs })
+          setLoading(false)
+          return
+        }
+      }
+
       setGameState(freshGs)
       setLoading(false)
     }
@@ -89,14 +114,15 @@ export default function UmpireMatchPage() {
   const persistLiveScore = useCallback(async (gs) => {
     if (!match) return
     await supabase.from('matches').update({
-      live_score_p1:  gs.currentSetP1,
-      live_score_p2:  gs.currentSetP2,
-      live_set_p1:    gs.completedSets.filter(s => s.p1 > s.p2).length,
-      live_set_p2:    gs.completedSets.filter(s => s.p2 > s.p1).length,
-      current_set:    gs.currentSet,
-      shuttle_count:  gs.shuttleCount,
-      player1_scores: gs.completedSets.map(s => s.p1),
-      player2_scores: gs.completedSets.map(s => s.p2),
+      live_score_p1:       gs.currentSetP1,
+      live_score_p2:       gs.currentSetP2,
+      live_set_p1:         gs.completedSets.filter(s => s.p1 > s.p2).length,
+      live_set_p2:         gs.completedSets.filter(s => s.p2 > s.p1).length,
+      current_set:         gs.currentSet,
+      shuttle_count:       gs.shuttleCount,
+      player1_scores:      gs.completedSets.map(s => s.p1),
+      player2_scores:      gs.completedSets.map(s => s.p2),
+      umpire_heartbeat_at: new Date().toISOString(),
     }).eq('id', matchId)
   }, [match, matchId])
 
@@ -120,6 +146,20 @@ export default function UmpireMatchPage() {
     return () => clearInterval(timer)
   }, [gameState, persistLiveScore])
 
+  // Dedicated heartbeat — independent of game phase, fires immediately then every 30s.
+  // BTC uses this to detect a dropped connection (threshold: 90s).
+  useEffect(() => {
+    if (!matchId) return
+    const ping = async () => {
+      await supabase.from('matches')
+        .update({ umpire_heartbeat_at: new Date().toISOString() })
+        .eq('id', matchId)
+    }
+    ping()
+    const id = setInterval(ping, 30_000)
+    return () => clearInterval(id)
+  }, [matchId])
+
   useEffect(() => {
     document.documentElement.requestFullscreen?.().catch(() => {})
     return () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}) }
@@ -131,10 +171,24 @@ export default function UmpireMatchPage() {
       match_started_at: new Date().toISOString(),
       umpire_id:        profile?.id ?? null,
     }).eq('id', matchId)
-    await logEvent('match_start', { set_number: 1 })
-    
-    const setupGs = startNextSet(gameState, firstServerId, firstServerPlayer, firstReceiverPlayer)
-    setGameState({ ...setupGs, startedAt: new Date().toISOString() })
+    await logEvent('match_start', { set_number: gameState.currentSet ?? 1 })
+
+    if (gameState.isRestore) {
+      // Resuming mid-match: keep existing scores, just set the current server
+      setGameState({
+        ...gameState,
+        phase:          'playing',
+        serverId:       firstServerId,
+        serverPlayer:   firstServerPlayer,
+        receiverPlayer: firstReceiverPlayer,
+        isRestore:      false,
+        history:        [],
+        future:         [],
+      })
+    } else {
+      const setupGs = startNextSet(gameState, firstServerId, firstServerPlayer, firstReceiverPlayer)
+      setGameState({ ...setupGs, startedAt: new Date().toISOString() })
+    }
   }
 
   async function handlePoint(scorerId) {
@@ -219,6 +273,13 @@ export default function UmpireMatchPage() {
     await logEvent('interval_end', { set_number: next.currentSet })
   }
 
+  async function handleShuttleRequest() {
+    await supabase
+      .from('matches')
+      .update({ shuttle_request_at: new Date().toISOString() })
+      .eq('id', matchId)
+  }
+
   async function handleForceEnd() {
     setGameState(prev => ({ ...prev, phase: 'finished' }))
   }
@@ -275,7 +336,9 @@ export default function UmpireMatchPage() {
           <div className="selection-grid">
             <button
               className="primary-btn ready"
-              onClick={() => {
+              onClick={async () => {
+                // BTC may have set status back to 'calling' via recall — restore to active
+                await supabase.from('matches').update({ status: 'active' }).eq('id', matchId)
                 setGameState(savedGs)
                 setPendingRestore(null)
               }}
@@ -285,13 +348,78 @@ export default function UmpireMatchPage() {
             <button
               className="secondary-link-btn"
               style={{ border: '1px solid #ef4444', color: '#ef4444', borderRadius: '0.5rem', padding: '0.75rem' }}
-              onClick={() => {
+              onClick={async () => {
                 try { localStorage.removeItem(storageKey) } catch {}
+                await supabase.from('matches').update({
+                  live_score_p1:  0,
+                  live_score_p2:  0,
+                  live_set_p1:    0,
+                  live_set_p2:    0,
+                  current_set:    1,
+                  player1_scores: [],
+                  player2_scores: [],
+                  status:         'active',
+                }).eq('id', matchId)
                 setGameState(freshGs)
                 setPendingRestore(null)
               }}
             >
               Bỏ qua — bắt đầu lại
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // DB restore banner — no localStorage, but active match with scores in DB
+  if (pendingDBRestore && player1 && player2) {
+    const { dbGs, freshGs } = pendingDBRestore
+    const sets = dbGs.completedSets ?? []
+    return (
+      <div className="umpire-screen screen-center">
+        <div className="screen-content-max" style={{ padding: '2rem', textAlign: 'center' }}>
+          <p className="screen-title" style={{ marginBottom: '0.5rem' }}>Trận đang giữa chừng</p>
+          <p className="screen-subtitle" style={{ marginBottom: '0.5rem' }}>
+            {player1.name} vs {player2.name}
+          </p>
+          {sets.length > 0 && (
+            <p className="screen-subtitle" style={{ marginBottom: '0.5rem', fontSize: '0.85em' }}>
+              {sets.map((s, i) => `H${i + 1}: ${s.p1}–${s.p2}`).join('  ')}
+            </p>
+          )}
+          <p className="screen-subtitle" style={{ marginBottom: '2rem' }}>
+            Hiệp {dbGs.currentSet} — {dbGs.currentSetP1} : {dbGs.currentSetP2}
+          </p>
+          <div className="selection-grid">
+            <button
+              className="primary-btn ready"
+              onClick={() => {
+                setGameState(dbGs)
+                setPendingDBRestore(null)
+              }}
+            >
+              Tiếp tục từ điểm hiện tại
+            </button>
+            <button
+              className="secondary-link-btn"
+              style={{ border: '1px solid #ef4444', color: '#ef4444', borderRadius: '0.5rem', padding: '0.75rem' }}
+              onClick={async () => {
+                await supabase.from('matches').update({
+                  live_score_p1:  0,
+                  live_score_p2:  0,
+                  live_set_p1:    0,
+                  live_set_p2:    0,
+                  current_set:    1,
+                  player1_scores: [],
+                  player2_scores: [],
+                  status:         'active',
+                }).eq('id', matchId)
+                setPendingDBRestore(null)
+                setGameState(freshGs)
+              }}
+            >
+              Bỏ qua — bắt đầu lại từ 0
             </button>
           </div>
         </div>
@@ -323,6 +451,7 @@ export default function UmpireMatchPage() {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShuttle={handleShuttle}
+        onShuttleRequest={handleShuttleRequest}
         onEndMatch={handleForceEnd}
         onStatChange={handleStatChange}
         onAppealLogged={handleAppealLogged}

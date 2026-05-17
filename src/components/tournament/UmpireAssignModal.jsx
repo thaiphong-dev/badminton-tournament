@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { X, UserCheck, Loader2, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
 
 /**
- * Modal cho creator assign trọng tài vào một trận đấu.
+ * Modal for creator to assign an umpire to a match.
  * Props:
  *   match        – match object (id, player1_name, player2_name, umpire_id)
  *   tournamentId – string
@@ -12,8 +13,9 @@ import { cn } from '@/lib/utils/cn'
  *   onAssigned   – fn(matchId, umpireId)
  */
 export default function UmpireAssignModal({ match, tournamentId, onClose, onAssigned }) {
+  const { t } = useI18n()
   const [umpires, setUmpires]   = useState([])
-  const [workload, setWorkload] = useState({})  // umpireId → pending count
+  const [workload, setWorkload] = useState({})
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [selected, setSelected] = useState(match.umpire_id ?? null)
@@ -21,7 +23,6 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
 
   useEffect(() => {
     async function load() {
-      // Get all umpires in this tournament
       const { data: tuData } = await supabase
         .from('tournament_umpires')
         .select('umpire_id, profiles!umpire_id(id, name, phone)')
@@ -30,7 +31,6 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
       const list = (tuData || []).map(r => r.profiles).filter(Boolean)
       setUmpires(list)
 
-      // Workload: pending matches per umpire in this tournament
       if (list.length > 0) {
         const { data: matches } = await supabase
           .from('matches')
@@ -68,7 +68,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
     }
   }
 
-  const matchLabel = [match.player1_name, match.player2_name].filter(Boolean).join(' vs ') || `Trận #${match.id?.slice(-4)}`
+  const matchLabel = [match.player1_name, match.player2_name].filter(Boolean).join(' vs ') || `Match #${match.id?.slice(-4)}`
 
   return (
     <div
@@ -79,7 +79,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Phân công trọng tài</h2>
+            <h2 className="text-base font-bold text-gray-900">{t('umpire.assign.title')}</h2>
             <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[200px]">{matchLabel}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
@@ -96,8 +96,8 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
           ) : umpires.length === 0 ? (
             <div className="text-center py-8">
               <ShieldCheck className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Chưa có trọng tài nào trong giải.</p>
-              <p className="text-xs text-gray-400 mt-1">Thêm trọng tài trong tab "Trọng tài".</p>
+              <p className="text-sm text-gray-500">{t('umpire.assign.noUmpires')}</p>
+              <p className="text-xs text-gray-400 mt-1">{t('umpire.assign.addHint')}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -114,7 +114,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
                   <span className="text-xs text-gray-400">–</span>
                 </div>
-                <span className="text-sm text-gray-500 italic">Chưa phân công</span>
+                <span className="text-sm text-gray-500 italic">{t('umpire.assign.unassigned')}</span>
                 {selected === null && (
                   <span className="ml-auto w-3.5 h-3.5 rounded-full bg-blue-500 shrink-0" />
                 )}
@@ -144,7 +144,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
                     <div className="flex items-center gap-2 shrink-0">
                       {pending > 0 && (
                         <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-medium">
-                          {pending} trận
+                          {t('umpire.assign.pending', { n: pending })}
                         </span>
                       )}
                       {isAssigned && (
@@ -171,7 +171,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
             onClick={onClose}
             className="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Hủy
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
@@ -179,7 +179,7 @@ export default function UmpireAssignModal({ match, tournamentId, onClose, onAssi
             className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Lưu
+            {t('common.save')}
           </button>
         </div>
       </div>

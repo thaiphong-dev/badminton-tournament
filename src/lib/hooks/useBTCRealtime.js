@@ -8,20 +8,24 @@ import { supabase } from '@/lib/supabase'
  * @param {string}        tournamentId   - UUID của tournament đang xem
  * @param {Function}      onMatchUpdate  - callback(updatedMatch) — gọi khi match thay đổi
  * @param {Function|null} onStatsUpdate  - callback(updatedStats) — gọi khi match_stats thay đổi (optional)
+ * @param {string}        channelSuffix  - suffix để tránh xung đột channel name khi mount nhiều lần
+ * @param {Function|null} onStatusChange - callback(status: 'SUBSCRIBED'|'CHANNEL_ERROR'|'CLOSED') — expose connection state
  */
-export function useBTCRealtime(tournamentId, onMatchUpdate, onStatsUpdate = null) {
-  const callbackRef      = useRef(onMatchUpdate)
-  const statsCallbackRef = useRef(onStatsUpdate)
+export function useBTCRealtime(tournamentId, onMatchUpdate, onStatsUpdate = null, channelSuffix = '', onStatusChange = null) {
+  const callbackRef       = useRef(onMatchUpdate)
+  const statsCallbackRef  = useRef(onStatsUpdate)
+  const statusCallbackRef = useRef(onStatusChange)
   useLayoutEffect(() => {
-    callbackRef.current      = onMatchUpdate
-    statsCallbackRef.current = onStatsUpdate
+    callbackRef.current       = onMatchUpdate
+    statsCallbackRef.current  = onStatsUpdate
+    statusCallbackRef.current = onStatusChange
   })
 
   useEffect(() => {
     if (!tournamentId) return
 
     let channel = supabase
-      .channel(`btc-${tournamentId}`)
+      .channel(`btc-${tournamentId}${channelSuffix}`)
       .on(
         'postgres_changes',
         {
@@ -51,6 +55,7 @@ export function useBTCRealtime(tournamentId, onMatchUpdate, onStatsUpdate = null
     }
 
     channel.subscribe((status) => {
+      statusCallbackRef.current?.(status)
       if (status === 'CHANNEL_ERROR') {
         console.error('[useBTCRealtime] Subscription error — sẽ tự retry')
       }
@@ -59,7 +64,7 @@ export function useBTCRealtime(tournamentId, onMatchUpdate, onStatsUpdate = null
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [tournamentId, !!onStatsUpdate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tournamentId, channelSuffix, !!onStatsUpdate]) // eslint-disable-line react-hooks/exhaustive-deps
   // Callbacks đọc qua ref nên không cần trong deps.
   // Re-subscribe nếu onStatsUpdate thay đổi từ null → function (hoặc ngược lại).
 }

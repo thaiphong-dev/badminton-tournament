@@ -49,6 +49,7 @@ export default function CheckoutPage() {
   const [loadError, setLoadError]   = useState(null)
   const [actionError, setActionError] = useState(null)
   const [loading, setLoading]       = useState(true)
+  const [orderAutoConfirmed, setOrderAutoConfirmed] = useState(false)
 
   // Redirect if not a creator
   useEffect(() => {
@@ -109,9 +110,31 @@ export default function CheckoutPage() {
     setLoading(false)
   }
 
-  const qrUrl = bankInfo?.bank_bin && bankInfo?.bank_account && order
-    ? `https://img.vietqr.io/image/${bankInfo.bank_bin}-${bankInfo.bank_account}-compact2.jpg` +
-      `?amount=${order?.amount ?? plan?.price ?? 0}&addInfo=${encodeURIComponent(order.transfer_content)}&accountName=${encodeURIComponent(bankInfo.bank_owner ?? '')}`
+  useEffect(() => {
+    if (!order?.id) return
+
+    const channel = supabase
+      .channel(`checkout-order-${order.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'payment_orders',
+        filter: `id=eq.${order.id}`,
+      }, (payload) => {
+        if (payload.new.status === 'confirmed') {
+          setOrderAutoConfirmed(true)
+        } else if (payload.new.status === 'rejected') {
+          setActionError('Đơn hàng đã bị từ chối. Vui lòng liên hệ admin.')
+        }
+      })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [order?.id])
+
+  const qrUrl = bankInfo?.bank_code && bankInfo?.bank_account && order
+    ? `https://qr.sepay.vn/img?bank=${bankInfo.bank_code}&acc=${bankInfo.bank_account}` +
+      `&amount=${order?.amount ?? plan?.price ?? 0}&des=${encodeURIComponent(order.transfer_content)}&template=compact`
     : null
 
   async function handleCreateOrder() {
@@ -320,6 +343,19 @@ export default function CheckoutPage() {
       {step === 2 && order && (
         <div className="space-y-5">
 
+          {/* Auto-confirmed banner */}
+          {orderAutoConfirmed && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>
+                <strong>Thanh toán đã được xác nhận tự động!</strong>{' '}
+                <button onClick={() => navigate('/creator/subscription')} className="underline font-medium ml-1">
+                  Xem gói của bạn →
+                </button>
+              </span>
+            </div>
+          )}
+
           {/* Transfer info */}
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
             <h2 className="font-semibold text-gray-900 mb-4 text-lg">Thông tin chuyển khoản</h2>
@@ -466,10 +502,22 @@ export default function CheckoutPage() {
             <CheckCircle className="w-9 h-9 text-green-500" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Đơn hàng đã được gửi!</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            Admin sẽ xác nhận thanh toán trong <strong>24h làm việc</strong>.
-            Gói của bạn được kích hoạt ngay khi được duyệt.
-          </p>
+          {orderAutoConfirmed ? (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 mb-6">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>
+                <strong>Thanh toán đã được xác nhận tự động!</strong>{' '}
+                <button onClick={() => navigate('/creator/subscription')} className="underline font-medium ml-1">
+                  Xem gói của bạn →
+                </button>
+              </span>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm mb-6">
+              Admin sẽ xác nhận thanh toán trong <strong>24h làm việc</strong>.
+              Gói của bạn được kích hoạt ngay khi được duyệt.
+            </p>
+          )}
 
           <div className="bg-gray-50 rounded-xl p-4 text-left text-sm space-y-2 mb-6">
             <Row label="Gói">{plan.name}</Row>

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/cn'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { useFeatureRegistry } from '@/lib/hooks/useFeatureRegistry'
 import { useFeatures } from '@/lib/hooks/useFeatures'
+import { showToast } from '@/lib/hooks/useApiError'
 
 function daysLeft(expiresAt) {
   return Math.ceil((new Date(expiresAt) - Date.now()) / 86_400_000)
@@ -81,6 +82,30 @@ export default function CreatorSubscriptionPage() {
     if (role !== 'creator' && role !== 'admin') { navigate('/'); return }
     load()
   }, [profile?.id, role])
+
+  useEffect(() => {
+    if (!profile?.id) return
+
+    const channel = supabase
+      .channel(`creator-orders-${profile.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'payment_orders',
+        filter: `creator_id=eq.${profile.id}`,
+      }, (payload) => {
+        if (payload.new.status === 'confirmed') {
+          load()
+          showToast('Thanh toán đã được xác nhận!', 'success')
+        } else if (payload.new.status === 'rejected') {
+          load()
+          showToast('Đơn hàng đã bị từ chối.', 'error')
+        }
+      })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [profile?.id])
 
   async function load() {
     setLoading(true)

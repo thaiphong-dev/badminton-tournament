@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils/cn'
-import { Check, X, ExternalLink, Copy, Download } from 'lucide-react'
+import { Check, X, ExternalLink, Copy, Download, AlertCircle } from 'lucide-react'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import TablePagination from '@/components/ui/TablePagination'
 
@@ -124,11 +124,30 @@ export default function OrdersTab({ adminId }) {
       ? orders.filter(o => o.addon !== null)
       : orders.filter(o => o.addon === null)
   const waitingCount = orders.filter(o => o.status === 'waiting').length
+  const staleOrders  = orders.filter(o =>
+    o.status === 'waiting' &&
+    Date.now() - new Date(o.created_at).getTime() > 2 * 60 * 60 * 1000
+  )
 
   if (loading) return <div className="py-16 flex justify-center"><LoadingSpinner /></div>
 
   return (
     <div>
+      {staleOrders.length > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800 mb-4">
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <span>
+            <strong>{staleOrders.length}</strong> đơn chờ xác nhận quá 2 giờ.{' '}
+            <button
+              onClick={() => { setFilter('waiting'); setPage(1) }}
+              className="underline font-medium hover:text-amber-900"
+            >
+              Xem ngay
+            </button>
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex flex-wrap gap-4">
           {/* Status filter */}

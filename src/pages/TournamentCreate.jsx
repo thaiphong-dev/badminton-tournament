@@ -4,14 +4,15 @@ import { ArrowLeft, ArrowRight, Trophy, Check, AlertCircle, ExternalLink } from 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { DISCIPLINE_LIST, DEFAULT_EVENT_SCORING_RULES } from '@/lib/constants'
+import { useI18n } from '@/i18n'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { cn } from '@/lib/utils/cn'
 import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 
 // ── Step indicator ────────────────────────────────────────────────────────────
-function StepIndicator({ current }) {
-  const steps = ['Thông tin giải đấu', 'Nội dung thi đấu']
+function StepIndicator({ current, t }) {
+  const steps = [t('create.step1'), t('create.step2')]
   return (
     <div className="flex items-center gap-2 mb-8">
       {steps.map((label, idx) => {
@@ -80,6 +81,7 @@ function DisciplineCard({ discipline, selected, disabled, onToggle }) {
 export default function TournamentCreate() {
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const { t } = useI18n()
   const [step, setStep] = useState(1)
 
   // Step 1 fields
@@ -107,7 +109,7 @@ export default function TournamentCreate() {
   // ── Step 1 → Step 2 ────────────────────────────────────────────────────────
   function handleNext() {
     if (!name.trim()) {
-      setNameError('Tên giải đấu là bắt buộc')
+      setNameError(t('create.nameRequired'))
       return
     }
     setNameError(null)
@@ -119,7 +121,7 @@ export default function TournamentCreate() {
     setSelected(prev => {
       if (prev.includes(value)) return prev.filter(v => v !== value)
       if (maxEvents !== null && prev.length >= maxEvents) {
-        setSelectError(`Gói của bạn chỉ cho phép tối đa ${maxEvents} nội dung thi đấu`)
+        setSelectError(t('create.maxEventsError', { max: maxEvents }))
         return prev
       }
       return [...prev, value]
@@ -130,27 +132,29 @@ export default function TournamentCreate() {
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (selected.length === 0) {
-      setSelectError('Vui lòng chọn ít nhất 1 nội dung thi đấu')
+      setSelectError(t('create.selectAtLeastOne'))
       return
     }
     if (maxEvents !== null && selected.length > maxEvents) {
-      setSelectError(`Gói của bạn chỉ cho phép tối đa ${maxEvents} nội dung thi đấu`)
+      setSelectError(t('create.maxEventsError', { max: maxEvents }))
       return
     }
     setLoading(true)
     setSubmitError(null)
     try {
-      // Check tournament limit (ignore RPC errors to avoid blocking on infra issues)
       const { data: limitCheck } = await supabase.rpc('check_tournament_limit', {
         p_creator_id: profile?.id,
       })
       if (limitCheck?.allowed === false) {
-        setSubmitError(`Gói ${limitCheck.plan_slug ?? 'hiện tại'} chỉ cho phép ${limitCheck.max} giải đấu active. Bạn đang có ${limitCheck.current} giải.`)
+        setSubmitError(t('create.limitError', {
+          plan:    limitCheck.plan_slug ?? 'current',
+          max:     limitCheck.max,
+          current: limitCheck.current,
+        }))
         setLoading(false)
         return
       }
 
-      // 1. Create tournament
       const { data: tournament, error: tErr } = await supabase
         .from('tournaments')
         .insert({
@@ -165,7 +169,6 @@ export default function TournamentCreate() {
         .single()
       if (tErr) throw tErr
 
-      // 2. Create one event per selected discipline (in display order)
       const eventsToInsert = DISCIPLINE_LIST
         .filter(d => selected.includes(d.value))
         .map((d, idx) => ({
@@ -187,7 +190,7 @@ export default function TournamentCreate() {
       navigate(`/tournament/${tournament.id}`)
     } catch (err) {
       console.error(err)
-      setSubmitError(`Không thể tạo giải đấu: ${err.message}`)
+      setSubmitError(t('create.createError', { msg: err.message }))
     } finally {
       setLoading(false)
     }
@@ -197,7 +200,7 @@ export default function TournamentCreate() {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
       {/* Back */}
       <Link to="/" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6">
-        <ArrowLeft className="w-4 h-4" /> Quay lại
+        <ArrowLeft className="w-4 h-4" /> {t('common.back')}
       </Link>
 
       {/* Card */}
@@ -208,19 +211,19 @@ export default function TournamentCreate() {
             <Trophy className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Tạo giải đấu mới</h1>
-            <p className="text-sm text-gray-500">Bước {step}/2</p>
+            <h1 className="text-lg font-bold text-gray-900">{t('create.title')}</h1>
+            <p className="text-sm text-gray-500">{t('create.step', { n: step })}</p>
           </div>
         </div>
 
-        <StepIndicator current={step} />
+        <StepIndicator current={step} t={t} />
 
         {/* ── STEP 1: Basic info ── */}
         {step === 1 && (
           <div className="space-y-5">
             <Input
-              label="Tên giải đấu *"
-              placeholder="VD: Giải Cầu Lông Mùa Hè 2026"
+              label={t('create.nameLabel')}
+              placeholder={t('create.namePlaceholder')}
               value={name}
               onChange={e => { setName(e.target.value); setNameError(null) }}
               error={nameError}
@@ -229,21 +232,21 @@ export default function TournamentCreate() {
             />
 
             <Input
-              label="Địa điểm tổ chức"
-              placeholder="VD: Nhà thi đấu quận 1, TP.HCM"
+              label={t('create.locationLabel')}
+              placeholder={t('create.locationPlaceholder')}
               value={location}
               onChange={e => setLocation(e.target.value)}
             />
 
             <div className="grid grid-cols-2 gap-4">
               <Input
-                label="Ngày bắt đầu"
+                label={t('create.startDate')}
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
               />
               <Input
-                label="Ngày kết thúc"
+                label={t('create.endDate')}
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
@@ -252,7 +255,7 @@ export default function TournamentCreate() {
 
             <div className="pt-2 flex justify-end">
               <Button onClick={handleNext}>
-                Tiếp theo
+                {t('common.next')}
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
@@ -264,15 +267,15 @@ export default function TournamentCreate() {
           <div className="space-y-5">
             <div>
               <h2 className="text-sm font-semibold text-gray-700 mb-1">
-                Chọn nội dung thi đấu *
+                {t('create.disciplineTitle')}
               </h2>
               <p className="text-xs text-gray-400 mb-1">
-                Có thể chọn nhiều nội dung. Mỗi nội dung sẽ được cấu hình riêng ở bước tiếp theo.
+                {t('create.disciplineSubtitle')}
               </p>
               {maxEvents !== null && (
                 <p className="text-xs text-amber-600 mb-3">
-                  Gói hiện tại cho phép tối đa <strong>{maxEvents}</strong> nội dung/giải.{' '}
-                  <Link to="/plans" className="underline">Nâng cấp</Link> để mở thêm.
+                  {t('create.planLimit', { max: maxEvents })}{' '}
+                  <Link to="/plans" className="underline">{t('create.upgradeLink')}</Link> {t('create.upgradeLink').includes('Nâng') ? 'để mở thêm.' : 'for more.'}
                 </p>
               )}
 
@@ -299,7 +302,7 @@ export default function TournamentCreate() {
             {/* Summary chip */}
             {selected.length > 0 && (
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-700">
-                Đã chọn <strong>{selected.length}</strong> nội dung:{' '}
+                {t('create.selected', { n: selected.length })}{' '}
                 {DISCIPLINE_LIST.filter(d => selected.includes(d.value)).map(d => d.label).join(' · ')}
               </div>
             )}
@@ -310,13 +313,13 @@ export default function TournamentCreate() {
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{submitError}</span>
                 </div>
-                {submitError.includes('chỉ cho phép') && (
+                {(submitError.includes('allows') || submitError.includes('chỉ cho phép')) && (
                   <Link
                     to="/plans"
                     className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium text-xs mt-2"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    Xem các gói dịch vụ để nâng cấp
+                    {t('create.viewPlans')}
                   </Link>
                 )}
               </div>
@@ -325,11 +328,11 @@ export default function TournamentCreate() {
             <div className="pt-2 flex items-center justify-between">
               <Button variant="secondary" onClick={() => setStep(1)}>
                 <ArrowLeft className="w-4 h-4" />
-                Quay lại
+                {t('common.back')}
               </Button>
               <Button onClick={handleSubmit} loading={loading}>
                 <Trophy className="w-4 h-4" />
-                Tạo giải đấu
+                {t('create.submit')}
               </Button>
             </div>
           </div>
