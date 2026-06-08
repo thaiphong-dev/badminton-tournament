@@ -20,6 +20,8 @@ export default function RegisterPage() {
   const [phone, setPhone]         = useState('')
   const [password, setPassword]   = useState('')
   const [club, setClub]           = useState('')
+  const [gender, setGender]       = useState('')
+  const [dob, setDob]             = useState('')
   const [showPw, setShowPw]       = useState(false)
   const [error, setError]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -33,6 +35,15 @@ export default function RegisterPage() {
     const digits = phone.replace(/\D/g, '')
     if (digits.length < 9) { setError('Số điện thoại không hợp lệ (ít nhất 9 chữ số).'); return }
     if (password.length < 8) { setError('Mật khẩu tối thiểu 8 ký tự.'); return }
+    if (selectedRole === 'athlete') {
+      if (!gender) { setError('Vui lòng chọn giới tính.'); return }
+      if (!dob) { setError('Vui lòng nhập ngày tháng năm sinh.'); return }
+      const dobDate = new Date(dob)
+      if (isNaN(dobDate.getTime()) || dobDate >= new Date()) {
+        setError('Ngày sinh không hợp lệ.')
+        return
+      }
+    }
 
     setError('')
     setLoading(true)
@@ -43,6 +54,8 @@ export default function RegisterPage() {
         : null
       const prof = await registerWithPhone(
         phone.trim(), password, safeName, selectedRole, safeClub,
+        selectedRole === 'athlete' ? gender : null,
+        selectedRole === 'athlete' ? dob    : null,
       )
       navigate(defaultPathForRole(prof.role), { replace: true })
     } catch (err) {
@@ -168,18 +181,53 @@ export default function RegisterPage() {
             </div>
 
             {selectedRole === 'athlete' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Tên CLB / Đội <span className="text-gray-400 font-normal">(tuỳ chọn)</span>
-                </label>
-                <input
-                  type="text"
-                  value={club}
-                  onChange={e => setClub(e.target.value)}
-                  placeholder="CLB Cầu Lông XYZ"
-                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Giới tính <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={gender}
+                    onChange={e => { setGender(e.target.value); setError('') }}
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  >
+                    <option value="">-- Chọn giới tính --</option>
+                    <option value="male">Nam</option>
+                    <option value="female">Nữ</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Ngày sinh <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={dob}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={e => { setDob(e.target.value); setError('') }}
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Dùng để xét nhóm tuổi và xác nhận nội dung đơn/đôi.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Tên CLB / Đội <span className="text-gray-400 font-normal">(tuỳ chọn)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={club}
+                    onChange={e => setClub(e.target.value)}
+                    placeholder="CLB Cầu Lông XYZ"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </>
             )}
 
             <button

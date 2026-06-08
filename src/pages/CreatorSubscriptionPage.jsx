@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Trophy, Clock, CheckCircle, XCircle, AlertCircle, ArrowLeft, Zap, Bell, AlertTriangle, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -68,6 +68,7 @@ export default function CreatorSubscriptionPage() {
   const navigate = useNavigate()
   const { getAllFeatures } = useFeatureRegistry()
   const { features: activeFeatureKeys } = useFeatures()
+  const mountKey = useRef(Date.now())
 
   const [planData, setPlanData]     = useState(null)
   const [orders, setOrders]         = useState([])
@@ -87,7 +88,7 @@ export default function CreatorSubscriptionPage() {
     if (!profile?.id) return
 
     const channel = supabase
-      .channel(`creator-orders-${profile.id}`)
+      .channel(`creator-orders-${profile.id}-${mountKey.current}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',

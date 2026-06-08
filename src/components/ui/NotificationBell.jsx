@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Clock, AlertCircle, AlertTriangle, CheckCircle, CreditCard, Loader2, XCircle } from 'lucide-react'
+import { Bell, Clock, AlertCircle, AlertTriangle, CheckCircle, CreditCard, Loader2, XCircle, RefreshCw, UserPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils/cn'
 import { showToast } from '@/lib/hooks/useApiError'
@@ -71,6 +71,20 @@ function NotifIcon({ type }) {
       </div>
     )
   }
+  if (type === 'tournament_updated') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+        <RefreshCw className="w-4 h-4 text-indigo-600" />
+      </div>
+    )
+  }
+  if (type === 'new_athlete_registration') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+        <UserPlus className="w-4 h-4 text-emerald-600" />
+      </div>
+    )
+  }
   return (
     <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
       <Bell className="w-4 h-4 text-gray-500" />
@@ -81,27 +95,37 @@ function NotifIcon({ type }) {
 export default function NotificationBell({ userId, role }) {
   const navigate = useNavigate()
   const dropdownRef = useRef(null)
+  // Unique per mount — prevents "already subscribed" error when user logs out then back in.
+  // supabase.removeChannel() is async; before it finishes the old channel stays in the
+  // registry, so calling supabase.channel('same-name') returns the still-subscribed
+  // instance and throws on .on(). A unique suffix avoids the collision entirely.
+  const mountKey = useRef(Date.now())
 
-  const [data, setData]     = useState({ unread_count: 0, notifications: [] })
-  const [open, setOpen]     = useState(false)
+  const [data, setData]       = useState({ unread_count: 0, notifications: [] })
+  const [open, setOpen]       = useState(false)
   const [loading, setLoading] = useState(true)
 
-  async function load() {
-    const { data: res } = await supabase.rpc('get_my_notifications', { p_user_id: userId })
+  async function load(uid) {
+    const { data: res } = await supabase.rpc('get_my_notifications', { p_user_id: uid })
     setData(res ?? { unread_count: 0, notifications: [] })
     setLoading(false)
   }
 
   useEffect(() => {
-    if (!userId) return
-    load()
+    if (!userId) {
+      setData({ unread_count: 0, notifications: [] })
+      setLoading(true)
+      return
+    }
+    load(userId)
 
-    const channel = supabase.channel(`notifs-${userId}`)
+    const channel = supabase
+      .channel(`notifs-${userId}-${mountKey.current}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'user_notifications',
         filter: `user_id=eq.${userId}`,
       }, (payload) => {
-        load()
+        load(userId)
         const n = payload.new
         if (n.type === 'payment_confirmed') {
           showToast(n.title ?? 'Thanh toán đã được xác nhận!', 'success')
@@ -115,11 +139,15 @@ export default function NotificationBell({ userId, role }) {
           showToast(n.title ?? 'Đăng ký được chấp thuận!', 'success')
         } else if (n.type === 'registration_rejected') {
           showToast(n.title ?? 'Đăng ký không được chấp thuận.', 'error')
+        } else if (n.type === 'tournament_updated') {
+          showToast(n.title ?? 'Giải đấu vừa cập nhật thông tin.', 'info')
+        } else if (n.type === 'new_athlete_registration') {
+          showToast(n.title ?? 'Có vận động viên mới đăng ký.', 'info')
         }
       })
       .subscribe()
 
-    return () => supabase.removeChannel(channel)
+    return () => { supabase.removeChannel(channel) }
   }, [userId])
 
   useEffect(() => {

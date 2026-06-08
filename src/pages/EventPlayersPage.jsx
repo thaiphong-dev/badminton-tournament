@@ -1,5 +1,6 @@
 import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { ChevronRight, CheckCircle, AlertCircle, Loader2, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS, FORMAT_LABELS } from '@/lib/constants'
@@ -11,6 +12,7 @@ import Breadcrumb from '@/components/layout/Breadcrumb'
 export default function EventPlayersPage() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -73,6 +75,9 @@ export default function EventPlayersPage() {
     )
   }
 
+  const isCreator = !!profile && tournament?.creator_id === profile.id
+  const canEdit   = !!profile && (isCreator || profile?.role === 'admin')
+
   const disciplineIcon  = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const disciplineLabel = DISCIPLINE_LABELS[event.discipline] ?? event.name
   const isDoubles       = isDoublesDiscipline(event.discipline)
@@ -130,20 +135,22 @@ export default function EventPlayersPage() {
         </div>
       )}
 
-      {/* Import component */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <PlayerImport
-          tournamentId={tournamentId}
-          eventId={eventId}
-          discipline={event.discipline}
-          existingPlayers={players}
-          requirePlayerCode={event.require_player_code ?? false}
-          onImportComplete={handleImportComplete}
-        />
-      </div>
+      {/* Import component — creator/admin only */}
+      {canEdit && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <PlayerImport
+            tournamentId={tournamentId}
+            eventId={eventId}
+            discipline={event.discipline}
+            existingPlayers={players}
+            requirePlayerCode={event.require_player_code ?? false}
+            onImportComplete={handleImportComplete}
+          />
+        </div>
+      )}
 
-      {/* Next step CTA */}
-      {readyForNext && (
+      {/* Next step CTA — creator/admin only */}
+      {readyForNext && canEdit && (
         <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />

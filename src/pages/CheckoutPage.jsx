@@ -30,7 +30,8 @@ export default function CheckoutPage() {
   const [searchParams]   = useSearchParams()
   const navigate         = useNavigate()
   const { profile, role } = useAuth()
-  const fileInputRef     = useRef(null)
+  const fileInputRef = useRef(null)
+  const mountKey     = useRef(Date.now())
 
   const orderId  = searchParams.get('orderId')
   const type     = searchParams.get('type')
@@ -114,7 +115,7 @@ export default function CheckoutPage() {
     if (!order?.id) return
 
     const channel = supabase
-      .channel(`checkout-order-${order.id}`)
+      .channel(`checkout-order-${order.id}-${mountKey.current}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',

@@ -27,9 +27,9 @@ const STATUS_BADGE = {
 export default function GroupStagePage() {
   const { id, eventId } = useParams()   // eventId is undefined on legacy routes
   const navigate = useNavigate()
-  const { role } = useAuth()
+  const { profile, role } = useAuth()
   const { hasFeature } = useFeatures()
-  const canUseUmpire = role === 'admin' || hasFeature('umpire_assign')
+  const canUseUmpire = !!profile && (role === 'admin' || hasFeature('umpire_assign'))
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -175,6 +175,10 @@ export default function GroupStagePage() {
   if (error) return <div className="max-w-2xl mx-auto px-4 py-24 text-center text-red-600">{error}</div>
   if (!tournament) return null
 
+  const isCreator  = !!profile && tournament.creator_id === profile.id
+  const canManage  = isCreator || role === 'admin'          // export, draw, qualify
+  const canScore   = canManage || role === 'umpire'          // score entry
+
   // When in per-event mode, use event's status + config; otherwise use tournament's
   const activeEntity = event ?? tournament
   const statusBadgeVariant = event
@@ -238,7 +242,7 @@ export default function GroupStagePage() {
               )}
             </div>
           </div>
-          {matches.length > 0 && (
+          {matches.length > 0 && canManage && (
             <button
               onClick={() => exportScheduleToExcel(tournament, matches, event)}
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors shrink-0"
@@ -250,8 +254,8 @@ export default function GroupStagePage() {
         </div>
       </div>
 
-      {/* ── Phase A: No groups → Randomizer or Lottery ── */}
-      {!hasGroups && (
+      {/* ── Phase A: No groups → Randomizer or Lottery (creator/admin only) ── */}
+      {!hasGroups && canManage && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           {/* Header + mode toggle */}
           <div className="flex items-center justify-between gap-3 mb-6">
@@ -380,7 +384,7 @@ export default function GroupStagePage() {
                 group={enrichedGroups[activeTab.idx]}
                 groupIdx={activeTab.idx}
                 playerMap={playerMap}
-                onMatchClick={setScoreMatch}
+                onMatchClick={canScore ? setScoreMatch : null}
                 attendanceEnabled={event?.attendance_enabled ?? false}
                 umpireMap={umpireMap}
                 onAssignUmpire={canUseUmpire ? setAssignMatch : null}
@@ -402,8 +406,8 @@ export default function GroupStagePage() {
             )}
           </div>
 
-          {/* Qualify & go to knockout */}
-          {allGroupsDone && (
+          {/* Qualify & go to knockout (creator/admin only) */}
+          {allGroupsDone && canManage && (
             <QualifySection
               tournament={tournament}
               event={event}

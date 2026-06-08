@@ -1,5 +1,6 @@
 import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '@/lib/hooks/useAuth'
 import {
   CheckCheck, UserX, UserCheck, GitBranch, LayoutList,
   AlertCircle, Loader2, ArrowLeft, Info, Search,
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils/cn'
 export default function AttendancePage() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -209,6 +211,9 @@ export default function AttendancePage() {
     )
   }
 
+  const isCreator = !!profile && tournament?.creator_id === profile.id
+  const canEdit   = !!profile && (isCreator || profile?.role === 'admin' || profile?.role === 'umpire')
+
   const disciplineIcon  = DISCIPLINE_ICONS[event?.discipline] ?? '🏸'
   const disciplineLabel = DISCIPLINE_LABELS[event?.discipline] ?? event?.name ?? '…'
   return (
@@ -233,15 +238,17 @@ export default function AttendancePage() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleMarkAll}
-            disabled={!!processing}
-          >
-            <CheckCheck className="w-4 h-4" />
-            Điểm danh tất cả
-          </Button>
+          {canEdit && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleMarkAll}
+              disabled={!!processing}
+            >
+              <CheckCheck className="w-4 h-4" />
+              Điểm danh tất cả
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => navigate(backHref)}
@@ -331,9 +338,9 @@ export default function AttendancePage() {
                 key={player.id}
                 player={player}
                 index={players.indexOf(player)}
-                onChange={handleAttendanceChange}
+                onChange={canEdit ? handleAttendanceChange : null}
                 isProcessing={processing === player.id}
-                disabled={!!processing}
+                disabled={!!processing || !canEdit}
               />
             ))}
           </ul>

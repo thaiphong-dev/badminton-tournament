@@ -22,6 +22,7 @@ import AdminDashboard       from '@/pages/AdminDashboard'
 // Main app pages
 import Home                 from '@/pages/Home'
 import TournamentCreate     from '@/pages/TournamentCreate'
+import TournamentEdit       from '@/pages/TournamentEdit'
 import TournamentOverview   from '@/pages/TournamentOverview'
 import TournamentSetup      from '@/pages/TournamentSetup'
 import EventSetup           from '@/pages/EventSetup'
@@ -50,6 +51,7 @@ import { PlanProvider }           from '@/lib/hooks/usePlan'
 import { LangProvider }           from '@/i18n'
 import Toaster                    from '@/components/ui/Toaster'
 import OfflineBanner              from '@/components/ui/OfflineBanner'
+import PwaPromptModal             from '@/components/ui/PwaPromptModal'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, refetchOnWindowFocus: true } },
@@ -69,7 +71,7 @@ const HEADERLESS = ['/login', '/register', '/unauthorized']
 
 function AppShell() {
   const { pathname } = useLocation()
-  const { role }     = useAuth()
+  const { profile, role } = useAuth()
   const { incomingCall } = useCallStore()
 
   const isUmpire     = pathname.startsWith('/umpire')
@@ -154,6 +156,11 @@ function AppShell() {
                   <TournamentCreate />
                 </ProtectedRoute>
               } />
+              <Route path="/tournament/:id/edit" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <TournamentEdit />
+                </ProtectedRoute>
+              } />
 
               {/* ── Tournament Overview ── */}
               <Route path="/tournament/:id" element={<TournamentOverview />} />
@@ -174,8 +181,16 @@ function AppShell() {
                   <AttendancePage />
                 </ProtectedRoute>
               } />
-              <Route path="/tournament/:id/event/:eventId/groups"   element={<GroupStagePage />} />
-              <Route path="/tournament/:id/event/:eventId/knockout" element={<KnockoutPage />} />
+              <Route path="/tournament/:id/event/:eventId/groups" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin', 'umpire']}>
+                  <GroupStagePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/event/:eventId/knockout" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin', 'umpire']}>
+                  <KnockoutPage />
+                </ProtectedRoute>
+              } />
               <Route path="/tournament/:id/event/:eventId/results"  element={<ResultsPage />} />
 
               {/* ── Report ── */}
@@ -188,9 +203,21 @@ function AppShell() {
               {/* ── Legacy routes (tournaments without per-event structure) ── */}
               {/* ResultsPage = chi tiết 1 event (stage-by-stage), dùng ở /event/:eventId/results */}
               {/* TournamentResultsPage = tổng quan toàn giải (tất cả events), dùng ở /results */}
-              <Route path="/tournament/:id/setup"          element={<TournamentSetup />} />
-              <Route path="/tournament/:id/groups"         element={<GroupStagePage />} />
-              <Route path="/tournament/:id/knockout"       element={<KnockoutPage />} />
+              <Route path="/tournament/:id/setup" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <TournamentSetup />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/groups" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin', 'umpire']}>
+                  <GroupStagePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/tournament/:id/knockout" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin', 'umpire']}>
+                  <KnockoutPage />
+                </ProtectedRoute>
+              } />
               <Route path="/tournament/:id/results"        element={<TournamentResultsPage />} />
               <Route path="/tournament/:id/results/legacy" element={<ResultsPage />} />
 
@@ -212,6 +239,8 @@ function AppShell() {
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>
+          {/* Daily PWA prompt — shown once per day for non-admin logged-in users */}
+          <PwaPromptModal userId={profile?.id} role={profile?.role} />
         </div>
       )}
     </>

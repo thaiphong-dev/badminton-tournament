@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils/cn'
  * Modal cho athlete đăng ký nội dung trong giải đấu.
  * Doubles events → yêu cầu thông tin partner.
  */
-export default function RegistrationModal({ tournament, events, athleteId, existingEventIds, onClose, onSuccess }) {
+export default function RegistrationModal({ tournament, events, athleteId, athleteName, existingEventIds, onClose, onSuccess }) {
   const [selected, setSelected]         = useState(new Set())
   const [note, setNote]                 = useState('')
   const [saving, setSaving]             = useState(false)
@@ -129,6 +129,9 @@ export default function RegistrationModal({ tournament, events, athleteId, exist
       setSaving(false)
       return
     }
+
+    // Bell + PWA notifications to creator are handled server-side by the
+    // on_new_registration DB trigger (Phương án B)
 
     setDone(true)
     setSaving(false)

@@ -1,22 +1,27 @@
-import { Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 
+function NotFound() {
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-24 text-center">
+      <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
+      <p className="text-gray-500">Trang không tìm thấy</p>
+    </div>
+  )
+}
+
 /**
- * Bảo vệ route theo role.
+ * Bảo vệ route theo role. Unauthorized → 404 (không redirect).
  * strictVerify=true: chờ server verify token xong mới render — dùng cho /admin.
- * Nếu verify_session gặp lỗi mạng và strictVerify=true → fail-closed (redirect login).
  */
 export default function ProtectedRoute({ allowedRoles, children, strictVerify = false }) {
   const { profile, role, verified, verifyFailed } = useAuth()
 
-  // Admin routes: fail-closed khi verify gặp lỗi mạng (không dùng cache role)
-  if (strictVerify && verifyFailed) {
-    return <Navigate to="/login" replace />
-  }
+  // Admin routes: fail-closed khi verify gặp lỗi mạng
+  if (strictVerify && verifyFailed) return <NotFound />
 
-  // Chờ server verify xong mới render (ngăn localStorage spoofing)
-  if (strictVerify && !verified) {
+  // Wait for session check before deciding — prevents flash 404 in production
+  if (!verified) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -24,11 +29,9 @@ export default function ProtectedRoute({ allowedRoles, children, strictVerify = 
     )
   }
 
-  if (!profile) return <Navigate to="/login" replace />
+  if (!profile) return <NotFound />
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
-    return <Navigate to="/unauthorized" replace />
-  }
+  if (allowedRoles && !allowedRoles.includes(role)) return <NotFound />
 
   return children
 }

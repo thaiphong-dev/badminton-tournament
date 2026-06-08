@@ -45,7 +45,7 @@ export default function KnockoutPage() {
   const { id, eventId } = useParams()
   const { profile } = useAuth()
   const { hasFeature } = useFeatures()
-  const canUseUmpire = profile?.role === 'admin' || hasFeature('umpire_assign')
+  const canUseUmpire = !!profile && (profile?.role === 'admin' || hasFeature('umpire_assign'))
 
   const [tournament, setTournament]   = useState(null)
   const [event, setEvent]             = useState(null)
@@ -411,8 +411,12 @@ export default function KnockoutPage() {
     )
   }
 
-  // ── Lottery draw setup (knockout_only, no bracket yet) ──────────────────────
-  if (pendingSetup) {
+  const isCreator = !!profile && tournament?.creator_id === profile.id
+  const canManage = isCreator || profile?.role === 'admin'    // setup, export
+  const canScore  = canManage || profile?.role === 'umpire'   // score entry
+
+  // ── Lottery draw setup (knockout_only, no bracket yet) — creator/admin only ─
+  if (pendingSetup && canManage) {
     const disciplineIcon2  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null
     const disciplineLabel2 = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
 
@@ -698,7 +702,7 @@ export default function KnockoutPage() {
               <BracketView
                 matches={matches}
                 playerMap={playerMap}
-                onMatchClick={(m) => { if (!m.is_forfeit) setScoreMatch(m) }}
+                onMatchClick={canScore ? (m) => { if (!m.is_forfeit) setScoreMatch(m) } : null}
                 containerRef={bracketRef}
                 tournamentName={tournament?.name}
               />
@@ -721,7 +725,7 @@ export default function KnockoutPage() {
               finalMatch={byStage['final']?.[0]}
               thirdMatch={byStage['third_place']?.[0]}
               playerMap={playerMap}
-              onMatchClick={setScoreMatch}
+              onMatchClick={canScore ? setScoreMatch : null}
               attendanceEnabled={event?.attendance_enabled ?? false}
               umpireMap={umpireMap}
               onAssignUmpire={canUseUmpire ? setAssignMatch : null}
@@ -731,7 +735,7 @@ export default function KnockoutPage() {
             <StageMatchList
               matches={byStage[activeStage] || []}
               playerMap={playerMap}
-              onMatchClick={setScoreMatch}
+              onMatchClick={canScore ? setScoreMatch : null}
               attendanceEnabled={event?.attendance_enabled ?? false}
               umpireMap={umpireMap}
               onAssignUmpire={canUseUmpire ? setAssignMatch : null}

@@ -1,11 +1,10 @@
-import { useState, useEffect, startTransition } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trophy, CalendarDays, User, Loader2, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, Save, AlertCircle } from 'lucide-react'
+import { CalendarDays, User, Loader2, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, Save, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { cn } from '@/lib/utils/cn'
-import RegistrationModal from '@/components/athlete/RegistrationModal'
 import { showToast } from '@/lib/hooks/useApiError'
 import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
 
@@ -16,21 +15,21 @@ const STATUS_BADGE = {
 }
 
 const TABS = [
-  { id: 'open',    label: 'Giải đang mở', icon: Trophy },
-  { id: 'mine',    label: 'Của tôi',      icon: CalendarDays },
-  { id: 'profile', label: 'Hồ sơ',        icon: User },
+  { id: 'mine',    label: 'Của tôi',  icon: CalendarDays },
+  { id: 'profile', label: 'Hồ sơ',   icon: User },
 ]
 
 export default function AthleteDashboard() {
   const { profile } = useAuth()
-  const [tab, setTab]               = useState('open')
+  const [tab, setTab]               = useState('mine')
   const [newNotifCount, setNewNotifCount] = useState(0)
+  const mountKey = useRef(Date.now())
 
   // NR5: Realtime đăng ký được duyệt/từ chối
   useEffect(() => {
     if (!profile) return
 
-    const channel = supabase.channel(`athlete-reg-${profile.id}`)
+    const channel = supabase.channel(`athlete-reg-${profile.id}-${mountKey.current}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
@@ -81,10 +80,10 @@ export default function AthleteDashboard() {
 
         // 1 channel per player ID, filter trên player1_id và player2_id riêng
         playerIds.forEach((pid, i) => {
-          const ch1 = supabase.channel(`athlete-mp1-${pid}`)
+          const ch1 = supabase.channel(`athlete-mp1-${pid}-${mountKey.current}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player1_id=eq.${pid}` }, handleMatchUpdate)
             .subscribe()
-          const ch2 = supabase.channel(`athlete-mp2-${pid}`)
+          const ch2 = supabase.channel(`athlete-mp2-${pid}-${mountKey.current}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player2_id=eq.${pid}` }, handleMatchUpdate)
             .subscribe()
           channels.push(ch1, ch2)
@@ -142,7 +141,6 @@ export default function AthleteDashboard() {
         })}
       </div>
 
-      {tab === 'open'    && <OpenTournamentsTab profile={profile} />}
       {tab === 'mine'    && <MyRegistrationsTab profile={profile} />}
       {tab === 'profile' && <ProfileTab profile={profile} />}
 
@@ -150,21 +148,7 @@ export default function AthleteDashboard() {
   )
 }
 
-// ── Status helper for athlete view ───────────────────────────────────────────
-
-function athleteStatus(t) {
-  if (t.status === 'completed')
-    return { label: 'Đã hoàn thành',     color: 'bg-gray-100 text-gray-500' }
-  if (t.status === 'group_stage' || t.status === 'knockout')
-    return { label: 'Đang thi đấu',      color: 'bg-blue-100 text-blue-700' }
-  if (t.registration_open)
-    return { label: 'Mở đăng ký',        color: 'bg-green-100 text-green-700' }
-  return   { label: 'Chưa mở đăng ký',  color: 'bg-gray-100 text-gray-400' }
-}
-
-const ATHLETE_PAGE_SIZE = 8
-
-// ── Tab: Giải đấu ─────────────────────────────────────────────────────────────
+// ── Tab: Giải đấu (removed — athletes browse tournaments from Home / TournamentOverview)
 
 function OpenTournamentsTab({ profile }) {
   const [tournaments, setTournaments] = useState([])

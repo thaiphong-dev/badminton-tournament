@@ -7,6 +7,7 @@ import {
   Trophy, Users, ChevronRight, Loader2, Settings, LayoutList,
   GitBranch, Star, AlertCircle, Plus, X, Crown, MapPin, Calendar, ClipboardList,
   ShieldCheck, UserCheck, Ban, Copy, TrendingUp, Layers,
+  Clock, Gift, FileText, QrCode, ExternalLink, CheckCircle2, Edit2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
@@ -21,6 +22,7 @@ import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
 import UmpireManagement from '@/components/tournament/UmpireManagement'
 import RegistrationReview from '@/components/tournament/RegistrationReview'
+import RegistrationModal from '@/components/athlete/RegistrationModal'
 
 // ── Helper: CTA route for an event ───────────────────────────────────────────
 function eventRoute(tournamentId, eventId, status) {
@@ -63,6 +65,9 @@ export default function TournamentOverview() {
   const [showCloneModal, setShowCloneModal] = useState(false)
   const [activeTab, setActiveTab]     = useState('events')
   const [pendingCount, setPendingCount] = useState(0)
+  const [showQrModal, setShowQrModal]   = useState(false)
+  const [myRegEventIds, setMyRegEventIds] = useState(new Set())
+  const [showRegModal, setShowRegModal]   = useState(false)
 
   useEffect(() => {
     fetchData(true)
@@ -92,6 +97,16 @@ export default function TournamentOverview() {
       .eq('status', 'pending')
       .then(({ count }) => setPendingCount(count ?? 0))
   }, [id])
+
+  useEffect(() => {
+    if (!profile?.id || profile.role !== 'athlete') return
+    supabase
+      .from('tournament_registrations')
+      .select('event_id')
+      .eq('tournament_id', id)
+      .eq('athlete_id', profile.id)
+      .then(({ data }) => setMyRegEventIds(new Set((data || []).map(r => r.event_id))))
+  }, [id, profile?.id])
 
   async function fetchData(showLoading = true) {
     if (showLoading) setLoading(true)
@@ -164,6 +179,9 @@ export default function TournamentOverview() {
   const canAddEvent    = !allDone && usedDisciplines.size < DISCIPLINE_LIST.length
   const isCreator      = !!profile && tournament?.creator_id === profile.id
   const isAdmin        = profile?.role === 'admin'
+  const isAthlete      = profile?.role === 'athlete'
+  const canRegister    = isAthlete && tournament?.registration_open && tournament.status !== 'completed'
+  const alreadyRegAll  = canRegister && events.length > 0 && events.every(e => myRegEventIds.has(e.id))
   const isSuspended    = !!tournament?.is_suspended
   const canUseUmpire   = role === 'admin' || hasFeature('umpire_assign')
 
@@ -256,6 +274,12 @@ export default function TournamentOverview() {
                   {tournament.end_date ? ` – ${new Date(tournament.end_date).toLocaleDateString('vi-VN')}` : ''}
                 </span>
               )}
+              {tournament.registration_deadline && (
+                <span className="flex items-center gap-1 text-amber-600">
+                  <Clock className="w-3.5 h-3.5" />
+                  Hạn ĐK: {new Date(tournament.registration_deadline).toLocaleDateString('vi-VN')}
+                </span>
+              )}
             </div>
 
             {events.length > 0 && (
@@ -310,10 +334,127 @@ export default function TournamentOverview() {
                   {t('overview.cloneTournament')}
                 </button>
               )}
+              {(isCreator || isAdmin) && (
+                <Link
+                  to={`/tournament/${id}/edit`}
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  Chỉnh sửa giải đấu
+                </Link>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Prize / Regulations / Chat QR */}
+      {(tournament.prize_structure || tournament.regulations_url || tournament.chat_qr_url) && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
+          {tournament.prize_structure && (
+            <div className={cn(tournament.regulations_url || tournament.chat_qr_url ? 'mb-4' : '')}>
+              <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                <Gift className="w-3.5 h-3.5 text-yellow-500" />
+                Cơ cấu giải thưởng
+              </p>
+              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{tournament.prize_structure}</p>
+            </div>
+          )}
+
+          {(tournament.regulations_url || tournament.chat_qr_url) && (
+            <div className={cn(
+              'flex gap-3 flex-wrap',
+              tournament.prize_structure && 'pt-4 border-t border-gray-100',
+            )}>
+              {tournament.regulations_url && (
+                <button
+                  onClick={() => window.open(tournament.regulations_url, '_blank', 'noopener,noreferrer')}
+                  className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                >
+                  <FileText className="w-4 h-4 shrink-0" />
+                  Xem Điều lệ giải đấu
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                </button>
+              )}
+              {tournament.chat_qr_url && (
+                <button
+                  onClick={() => setShowQrModal(true)}
+                  className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                >
+                  <QrCode className="w-4 h-4 shrink-0" />
+                  QR nhóm chat
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Athlete: registration CTA */}
+      {isAthlete && events.length > 0 && !allDone && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
+          <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Đăng ký thi đấu</p>
+          <div className="space-y-1.5 mb-4">
+            {events.map(ev => {
+              const registered = myRegEventIds.has(ev.id)
+              return (
+                <div key={ev.id} className="flex items-center justify-between py-1">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                    <span>{DISCIPLINE_ICONS[ev.discipline] ?? '🏸'}</span>
+                    {DISCIPLINE_LABELS[ev.discipline] ?? ev.name}
+                  </span>
+                  {registered && (
+                    <span className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Đã đăng ký
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {canRegister ? (
+            <button
+              onClick={() => setShowRegModal(true)}
+              disabled={alreadyRegAll}
+              className={cn(
+                'w-full py-2.5 rounded-xl text-sm font-semibold transition-colors',
+                alreadyRegAll
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700',
+              )}
+            >
+              {alreadyRegAll ? 'Đã đăng ký tất cả nội dung' : '+ Đăng ký tham gia'}
+            </button>
+          ) : (
+            <div className="w-full py-2.5 rounded-xl text-sm text-center text-gray-400 bg-gray-50">
+              {tournament.status === 'group_stage' || tournament.status === 'knockout'
+                ? 'Giải đang diễn ra — đã đóng đăng ký'
+                : 'Chưa mở đăng ký'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Athlete: registration modal */}
+      {showRegModal && (
+        <RegistrationModal
+          tournament={tournament}
+          events={events}
+          athleteId={profile.id}
+          athleteName={profile.name}
+          existingEventIds={myRegEventIds}
+          onClose={() => setShowRegModal(false)}
+          onSuccess={() => {
+            setShowRegModal(false)
+            supabase
+              .from('tournament_registrations')
+              .select('event_id')
+              .eq('tournament_id', id)
+              .eq('athlete_id', profile.id)
+              .then(({ data }) => setMyRegEventIds(new Set((data || []).map(r => r.event_id))))
+          }}
+        />
+      )}
 
       {/* Quick event switcher strip */}
       {events.filter(e => e.status !== 'setup').length >= 2 && (
@@ -451,6 +592,7 @@ export default function TournamentOverview() {
                   matchStats={matchStatsMap[event.id] ?? null}
                   champion={championMap[event.id] ?? null}
                   suspended={isSuspended && !isAdmin}
+                  canManage={isCreator || isAdmin}
                   t={t}
                 />
               ))}
@@ -487,6 +629,11 @@ export default function TournamentOverview() {
         />
       )}
 
+      {/* Chat QR Modal */}
+      {showQrModal && (
+        <QrModal url={tournament?.chat_qr_url} onClose={() => setShowQrModal(false)} />
+      )}
+
       {/* Clone Tournament Modal */}
       {showCloneModal && (
         <CloneTournamentModal
@@ -503,7 +650,7 @@ export default function TournamentOverview() {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ event, tournamentId, matchStats, champion, suspended = false, t }) {
+function EventCard({ event, tournamentId, matchStats, champion, suspended = false, canManage = false, t }) {
   const icon     = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const label    = DISCIPLINE_LABELS[event.discipline] ?? event.name
   const ctaHref  = eventRoute(tournamentId, event.id, event.status)
@@ -588,7 +735,7 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
             <Ban className="w-3.5 h-3.5 mr-1.5" />
             {t('overview.card.disabled')}
           </div>
-        ) : (
+        ) : canManage ? (
           <Link
             to={ctaHref}
             className="flex items-center justify-between w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
@@ -599,6 +746,97 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
             </span>
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </Link>
+        ) : event.status !== 'setup' ? (
+          <Link
+            to={`/tournament/${tournamentId}/event/${event.id}/bracket`}
+            className="flex items-center justify-between w-full px-3 py-2 bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <GitBranch className="w-3.5 h-3.5" />
+              Xem bracket
+            </span>
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        ) : null}
+
+        {canManage && event.status !== 'setup' && (
+          <Link
+            to={`/tournament/${tournamentId}/event/${event.id}/bracket`}
+            className="flex items-center gap-1.5 mt-2 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+          >
+            <GitBranch className="w-3 h-3" />
+            Xem bracket
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── QR chat modal ────────────────────────────────────────────────────────────
+function QrModal({ url, onClose }) {
+  const [imgState, setImgState] = useState('loading') // 'loading' | 'ok' | 'error'
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <p className="font-bold text-gray-900 flex items-center gap-2">
+            <QrCode className="w-4 h-4 text-green-600" />
+            QR nhóm chat
+          </p>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Image area */}
+        <div className="p-5">
+          {imgState === 'loading' && (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+            </div>
+          )}
+          {imgState === 'error' && (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <AlertCircle className="w-8 h-8 text-red-400" />
+              <p className="text-sm text-red-600 font-medium">Không tải được hình QR</p>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Mở trực tiếp →
+              </a>
+            </div>
+          )}
+          <img
+            src={url}
+            alt="QR nhóm chat"
+            onLoad={() => setImgState('ok')}
+            onError={() => setImgState('error')}
+            className={cn(
+              'w-full max-w-[280px] mx-auto block rounded-xl border border-gray-100',
+              imgState !== 'ok' && 'hidden',
+            )}
+          />
+        </div>
+
+        {imgState === 'ok' && (
+          <div className="px-5 pb-5 text-center">
+            <p className="text-xs text-gray-400">Dùng camera quét QR để tham gia nhóm chat</p>
+          </div>
         )}
       </div>
     </div>

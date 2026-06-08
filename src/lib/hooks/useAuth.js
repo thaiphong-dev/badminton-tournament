@@ -196,7 +196,7 @@ export async function loginWithPhone(phone, password) {
 
 // ─── registerWithPhone ────────────────────────────────────────────────────────
 
-export async function registerWithPhone(phone, password, name, role, club = null) {
+export async function registerWithPhone(phone, password, name, role, club = null, gender = null, dob = null) {
   const normalizedPhone = phone.replace(/\D/g, '')
 
   const { data, error } = await supabase.rpc('register_user', {
@@ -214,7 +214,17 @@ export async function registerWithPhone(phone, password, name, role, club = null
   }
   if (!data?.length) throw new Error('Đăng ký thất bại. Vui lòng thử lại.')
 
-  return loginWithPhone(phone, password)
+  const profile = await loginWithPhone(phone, password)
+
+  if (role === 'athlete' && gender && dob) {
+    await supabase.rpc('set_athlete_profile_details', {
+      p_user_id:       profile.id,
+      p_gender:        gender,
+      p_date_of_birth: dob,
+    }).catch(err => console.warn('set_athlete_profile_details:', err.message))
+  }
+
+  return profile
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────

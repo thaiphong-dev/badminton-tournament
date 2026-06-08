@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  Trophy, Plus, Calendar, Layers, ChevronRight, Loader2,
-  ChevronLeft, Search, MapPin, ArrowRight,
+  Trophy, Plus, Calendar, Layers, ChevronRight, ChevronLeft, Loader2,
+  Search, MapPin, ArrowRight, Filter,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -21,6 +21,14 @@ const STATUS_BADGE_VARIANT = {
 }
 
 const PAGE_SIZE = 12
+
+const FILTER_TABS = [
+  { value: 'all',       label: 'Tất cả' },
+  { value: 'setup',     label: 'Thiết lập' },
+  { value: 'open',      label: 'Mở đăng ký', dot: 'bg-green-400' },
+  { value: 'active',    label: 'Đang diễn ra', dot: 'bg-blue-400' },
+  { value: 'completed', label: 'Hoàn thành', dot: 'bg-gray-400' },
+]
 
 function daysLeft(expiresAt) {
   if (!expiresAt) return null
@@ -41,20 +49,28 @@ export default function Home() {
   const [page, setPage]                 = useState(1)
   const [total, setTotal]               = useState(0)
   const [search, setSearch]             = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [debouncedSearch, setDebSearch] = useState('')
+  const [activeFilter, setActiveFilter] = useState('all')  // all | setup | open | active | completed
 
-  const [activeSub, setActiveSub] = useState(null)
+  const [activeSub, setActiveSub]   = useState(null)
   const [subLoading, setSubLoading] = useState(false)
 
   const isCreator = role === 'creator'
   const isAdmin   = role === 'admin'
   const isPublic  = !profile
-  const isAthlete = role === 'athlete' || role === 'umpire'
+  const isAthlete = role === 'athlete'
 
   const maxTournaments    = planData?.plan?.max_tournaments ?? null
   const activeTournaments = planData?.active_tournament_count ?? 0
   const atTournamentLimit = isCreator && maxTournaments !== null && activeTournaments >= maxTournaments
 
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebSearch(search), 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Load creator subscription
   useEffect(() => {
     if (!isCreator || !profile?.id) return
     setSubLoading(true)
@@ -64,16 +80,14 @@ export default function Home() {
       .eq('creator_id', profile.id)
       .eq('status', 'active')
       .maybeSingle()
-      .then(({ data }) => {
-        setActiveSub(data)
-        setSubLoading(false)
-      })
+      .then(({ data }) => { setActiveSub(data); setSubLoading(false) })
   }, [isCreator, profile?.id])
 
+  // Refetch when filters or auth change
   useEffect(() => {
     setPage(1)
     fetchTournaments(1)
-  }, [profile?.id, role, statusFilter])
+  }, [profile?.id, role, activeFilter, debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchTournaments(p = 1) {
     setLoading(true)
@@ -88,14 +102,24 @@ export default function Home() {
         .order('created_at', { ascending: false })
         .range(from, to)
 
+      // Creator: own tournaments only
       if (isCreator && profile?.id) {
         query = query.eq('creator_id', profile.id)
-      } else if (isPublic || isAthlete) {
-        query = query.eq('registration_open', true)
+      }
+      // Admin, guest, athlete: all tournaments
+
+      // Unified filter
+      switch (activeFilter) {
+        case 'setup':     query = query.eq('status', 'setup'); break
+        case 'open':      query = query.eq('registration_open', true); break
+        case 'active':    query = query.in('status', ['group_stage', 'knockout']); break
+        case 'completed': query = query.eq('status', 'completed'); break
+        default: break
       }
 
-      if (statusFilter !== 'all' && (isCreator || isAdmin)) {
-        query = query.eq('status', statusFilter)
+      // Server-side search
+      if (debouncedSearch.trim()) {
+        query = query.or(`name.ilike.%${debouncedSearch.trim()}%,location.ilike.%${debouncedSearch.trim()}%`)
       }
 
       const { data, error: qErr, count } = await query
@@ -112,17 +136,8 @@ export default function Home() {
   function handlePageChange(p) {
     setPage(p)
     fetchTournaments(p)
-    window.scrollTo(0, 0)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-
-  const displayed = tournaments.filter(t => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      t.name?.toLowerCase().includes(q) ||
-      t.location?.toLowerCase().includes(q)
-    )
-  })
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const d = activeSub ? daysLeft(activeSub.expires_at) : null
@@ -205,10 +220,7 @@ export default function Home() {
                 </span>
               )}
             </div>
-            <Link
-              to="/plans"
-              className="text-xs text-blue-600 hover:underline font-medium shrink-0"
-            >
+            <Link to="/plans" className="text-xs text-blue-600 hover:underline font-medium shrink-0">
               {!activeSub || activeSub?.plan?.slug === 'free' ? t('home.upgrade') : t('home.renewUpgrade')}
             </Link>
           </div>
@@ -233,10 +245,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* Search + Filter */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      {/* Search + Filter bar */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-5 flex flex-col gap-3">
+        {/* Search row */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -246,25 +259,36 @@ export default function Home() {
           />
         </div>
 
-        {(isCreator || isAdmin) && (
-          <div className="flex gap-1 flex-wrap">
-            {['all', 'setup', 'group_stage', 'knockout', 'completed'].map(s => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                  statusFilter === s
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
-                )}
-              >
-                {s === 'all' ? t('common.all') : t('status.' + s) || s}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Filter chips */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="flex items-center gap-1 text-xs text-gray-400 shrink-0 mr-1">
+            <Filter className="w-3 h-3" />
+          </span>
+          {FILTER_TABS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => setActiveFilter(f.value)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap',
+                activeFilter === f.value
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              )}
+            >
+              {f.dot && <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', activeFilter === f.value ? 'bg-white' : f.dot)} />}
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Result count */}
+      {!loading && total > 0 && (
+        <p className="text-xs text-gray-400 mb-3">
+          {total} {total === 1 ? 'giải' : 'giải đấu'}
+          {debouncedSearch && ` · "${debouncedSearch}"`}
+        </p>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -278,24 +302,18 @@ export default function Home() {
             {t('common.retry')}
           </button>
         </div>
-      ) : displayed.length === 0 ? (
-        <EmptyState role={role} profile={profile} search={search} t={t} />
+      ) : tournaments.length === 0 ? (
+        <EmptyState role={role} profile={profile} search={debouncedSearch} activeFilter={activeFilter} t={t} />
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {displayed.map(tournament => (
+            {tournaments.map(tournament => (
               <TournamentCard key={tournament.id} tournament={tournament} isPublic={isPublic} t={t} lang={lang} />
             ))}
           </div>
 
-          {totalPages > 1 && !search && (
-            <Pagination page={page} totalPages={totalPages} onChange={handlePageChange} />
-          )}
-
-          {search && (
-            <p className="text-center text-xs text-gray-400 mt-4">
-              {t('home.showingCount', { shown: displayed.length, total })}
-            </p>
+          {totalPages > 1 && (
+            <Pagination page={page} totalPages={totalPages} total={total} onChange={handlePageChange} />
           )}
         </>
       )}
@@ -325,13 +343,15 @@ export default function Home() {
   )
 }
 
+// ── Tournament card ───────────────────────────────────────────────────────────
+
 function TournamentCard({ tournament: trn, isPublic, t, lang }) {
   const eventCount = trn.events?.[0]?.count ?? 0
 
   return (
     <Link
       to={`/tournament/${trn.id}`}
-      className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition-all group flex flex-col"
+      className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-blue-200 transition-all group flex flex-col"
     >
       <div className="flex items-start justify-between mb-3">
         <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
@@ -339,7 +359,8 @@ function TournamentCard({ tournament: trn, isPublic, t, lang }) {
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {trn.registration_open && (
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
               {t('home.openRegistration')}
             </span>
           )}
@@ -349,95 +370,119 @@ function TournamentCard({ tournament: trn, isPublic, t, lang }) {
         </div>
       </div>
 
-      <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
+      <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors leading-snug">
         {trn.name}
       </h3>
 
       {trn.location && (
         <p className="text-xs text-gray-400 flex items-center gap-1 mb-1">
-          <MapPin className="w-3 h-3" /> {trn.location}
+          <MapPin className="w-3 h-3 shrink-0" /> {trn.location}
         </p>
       )}
 
-      <div className="flex items-center gap-4 text-sm text-gray-500 mt-auto pt-3">
+      <div className="flex items-center gap-4 text-xs text-gray-500 mt-auto pt-3 border-t border-gray-50">
         <span className="flex items-center gap-1">
-          <Layers className="w-4 h-4" />
+          <Layers className="w-3.5 h-3.5" />
           {t('home.eventCount', { n: eventCount })}
         </span>
         <span className="flex items-center gap-1">
-          <Calendar className="w-4 h-4" />
+          <Calendar className="w-3.5 h-3.5" />
           {trn.start_date
             ? new Date(trn.start_date).toLocaleDateString(lang === 'en' ? 'en-GB' : 'vi-VN')
             : new Date(trn.created_at).toLocaleDateString(lang === 'en' ? 'en-GB' : 'vi-VN')}
         </span>
       </div>
 
-      {isPublic && trn.registration_open && (
-        <p className="text-xs text-blue-600 font-medium mt-3">
-          {t('home.loginToRegister')}
-        </p>
-      )}
-
-      {!isPublic && (
-        <div className="flex items-center justify-end mt-3 text-blue-600 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-          {t('home.viewOverview')} <ChevronRight className="w-4 h-4 ml-0.5" />
-        </div>
-      )}
+      <div className="flex items-center justify-end mt-2 text-blue-600 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+        {isPublic && trn.registration_open ? t('home.loginToRegister') : t('home.viewOverview')}
+        <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+      </div>
     </Link>
   )
 }
 
-function Pagination({ page, totalPages, onChange }) {
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+function Pagination({ page, totalPages, total, onChange }) {
+  function getPages() {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
+    const pages = [1]
+    if (page > 3) pages.push('…')
+    for (let p = Math.max(2, page - 1); p <= Math.min(totalPages - 1, page + 1); p++) {
+      pages.push(p)
+    }
+    if (page < totalPages - 2) pages.push('…')
+    pages.push(totalPages)
+    return pages
+  }
+
   return (
-    <div className="flex items-center justify-center gap-2 mt-8">
-      <button
-        onClick={() => onChange(page - 1)}
-        disabled={page === 1}
-        className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        <ChevronLeft className="w-4 h-4" />
-      </button>
+    <div className="mt-8 flex flex-col items-center gap-3">
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">Trước</span>
+        </button>
 
-      {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
-        const far = Math.abs(p - page) > 2 && p !== 1 && p !== totalPages
-        if (far) {
-          if (p === 2 || p === totalPages - 1) return <span key={p} className="text-gray-400 text-sm">…</span>
-          return null
-        }
-        return (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={cn(
-              'w-9 h-9 rounded-lg text-sm font-medium transition-colors',
-              p === page
-                ? 'bg-blue-600 text-white'
-                : 'border border-gray-200 text-gray-700 hover:bg-gray-50',
-            )}
-          >
-            {p}
-          </button>
-        )
-      })}
+        {getPages().map((p, i) =>
+          p === '…' ? (
+            <span key={`ellipsis-${i}`} className="w-9 text-center text-gray-400 text-sm select-none">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p)}
+              className={cn(
+                'w-9 h-9 rounded-lg text-sm font-medium transition-colors',
+                p === page
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'border border-gray-200 text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              {p}
+            </button>
+          )
+        )}
 
-      <button
-        onClick={() => onChange(page + 1)}
-        disabled={page === totalPages}
-        className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        <ChevronRight className="w-4 h-4" />
-      </button>
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <span className="hidden sm:inline">Sau</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        Trang {page} / {totalPages} · {total} giải đấu
+      </p>
     </div>
   )
 }
 
-function EmptyState({ role, profile, search, t }) {
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+function EmptyState({ role, profile, search, activeFilter, t }) {
   const isPublic  = !profile
   const isCreator = role === 'creator' || role === 'admin'
 
   if (search) return (
     <div className="text-center py-16 text-gray-400 text-sm">
       {t('home.noTournamentsSearch', { q: search })}
+    </div>
+  )
+
+  const filterLabel = FILTER_TABS.find(f => f.value === activeFilter)?.label
+  if (activeFilter !== 'all') return (
+    <div className="text-center py-16">
+      <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+        <Trophy className="w-7 h-7 text-gray-300" />
+      </div>
+      <p className="text-gray-500 text-sm">Chưa có giải đấu nào với bộ lọc "{filterLabel}".</p>
     </div>
   )
 
