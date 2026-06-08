@@ -6,6 +6,11 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { cn } from '@/lib/utils/cn'
 import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 
+const GENDER_OPTIONS = [
+  { value: 'male',   label: 'Nam' },
+  { value: 'female', label: 'Nữ' },
+]
+
 const ROLE_LABELS = {
   admin:   'Admin',
   creator: 'Creator',
@@ -22,11 +27,16 @@ const ROLE_COLORS = {
 
 export default function ProfilePage() {
   const navigate = useNavigate()
-  const { profile, role } = useAuth()
+  const { profile, role, updateProfileName } = useAuth()
 
   const [name, setName]                   = useState(profile?.name ?? '')
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg]       = useState(null)
+
+  const [gender, setGender]         = useState(null)
+  const [dob, setDob]               = useState('')
+  const [savingPersonal, setSavingPersonal] = useState(false)
+  const [personalMsg, setPersonalMsg]       = useState(null)
 
   const [oldPw, setOldPw]       = useState('')
   const [newPw, setNewPw]       = useState('')
@@ -38,14 +48,20 @@ export default function ProfilePage() {
     if (!profile) navigate('/login')
   }, [profile])
 
-  function updateProfileInStorage(newName) {
-    const stored = JSON.parse(localStorage.getItem('bt_session') || 'null')
-    if (stored) {
-      stored.name = newName
-      localStorage.setItem('bt_session', JSON.stringify(stored))
-      window.dispatchEvent(new Event('auth-change'))
-    }
-  }
+  useEffect(() => {
+    if (role !== 'athlete' || !profile?.id) return
+    supabase
+      .from('profiles')
+      .select('gender, dob')
+      .eq('id', profile.id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setGender(data.gender ?? null)
+          setDob(data.dob ?? '')
+        }
+      })
+  }, [profile?.id, role])
 
   async function handleSaveProfile() {
     if (name.trim().length < 2) {
@@ -63,9 +79,37 @@ export default function ProfilePage() {
       setProfileMsg({ ok: false, text: error.message })
       return
     }
-    updateProfileInStorage(safeName)
+    updateProfileName(safeName)
     setProfileMsg({ ok: true, text: 'Đã cập nhật tên.' })
     setTimeout(() => setProfileMsg(null), 3000)
+  }
+
+  async function handleSavePersonal() {
+    if (!gender) {
+      setPersonalMsg({ ok: false, text: 'Vui lòng chọn giới tính.' })
+      return
+    }
+    if (!dob) {
+      setPersonalMsg({ ok: false, text: 'Vui lòng nhập ngày sinh.' })
+      return
+    }
+    if (new Date(dob) >= new Date()) {
+      setPersonalMsg({ ok: false, text: 'Ngày sinh phải là ngày trong quá khứ.' })
+      return
+    }
+    setSavingPersonal(true)
+    const { error } = await supabase.rpc('set_athlete_profile_details', {
+      p_user_id:       profile.id,
+      p_gender:        gender,
+      p_date_of_birth: dob,
+    })
+    setSavingPersonal(false)
+    if (error) {
+      setPersonalMsg({ ok: false, text: error.message })
+      return
+    }
+    setPersonalMsg({ ok: true, text: 'Đã cập nhật thông tin.' })
+    setTimeout(() => setPersonalMsg(null), 3000)
   }
 
   async function handleChangePassword() {
@@ -157,6 +201,55 @@ export default function ProfilePage() {
           </button>
         </div>
       </div>
+
+      {/* Card 1b — Athlete personal info */}
+      {role === 'athlete' && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Thông tin thi đấu</h2>
+          <p className="text-xs text-gray-400 mb-4">Cần thiết để đăng ký nội dung thi đấu phù hợp</p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Giới tính</label>
+              <select
+                value={gender ?? ''}
+                onChange={e => { setGender(e.target.value || null); setPersonalMsg(null) }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- Chọn giới tính --</option>
+                {GENDER_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Ngày sinh</label>
+              <input
+                type="date"
+                value={dob}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={e => { setDob(e.target.value); setPersonalMsg(null) }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {personalMsg && (
+              <p className={cn('text-sm', personalMsg.ok ? 'text-green-600' : 'text-red-600')}>
+                {personalMsg.text}
+              </p>
+            )}
+
+            <button
+              onClick={handleSavePersonal}
+              disabled={savingPersonal}
+              className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm"
+            >
+              {savingPersonal ? 'Đang lưu...' : 'Lưu thông tin thi đấu'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Card 2 — Password */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Trophy, ChevronDown, LogOut, Shield, User } from 'lucide-react'
+import { Trophy, ChevronDown, LogOut, Shield, User, TrendingUp } from 'lucide-react'
 import { useAuth, defaultPathForRole } from '@/lib/hooks/useAuth'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
@@ -103,6 +103,18 @@ export default function Header() {
                   {t('nav.myPlan')}
                 </Link>
                 <Link
+                  to="/creator/analytics"
+                  className={cn(
+                    'hidden sm:flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                    location.pathname === '/creator/analytics'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50',
+                  )}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  Thống kê
+                </Link>
+                <Link
                   to="/addon-shop"
                   className={cn(
                     'px-3 py-2 rounded-lg text-xs transition-colors',
@@ -196,6 +208,16 @@ export default function Header() {
                       >
                         <Shield className="w-4 h-4 text-gray-400" />
                         {t('nav.adminPanel')}
+                      </Link>
+                    )}
+                    {role === 'creator' && (
+                      <Link
+                        to="/creator/analytics"
+                        onClick={() => setOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors sm:hidden"
+                      >
+                        <TrendingUp className="w-4 h-4 text-gray-400" />
+                        Thống kê
                       </Link>
                     )}
                     <Link

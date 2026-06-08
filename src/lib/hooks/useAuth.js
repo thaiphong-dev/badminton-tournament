@@ -150,7 +150,18 @@ export function useAuth() {
     setVerifyFailed(false)
   }
 
-  return { profile, role: profile?.role ?? null, verified, verifyFailed, signOut }
+  function updateProfileName(name) {
+    if (IS_DEV) {
+      const stored = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null')
+      if (stored) {
+        stored.profile = { ...stored.profile, name }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(stored))
+      }
+    }
+    setProfile(prev => prev ? { ...prev, name } : prev)
+  }
+
+  return { profile, role: profile?.role ?? null, verified, verifyFailed, signOut, updateProfileName }
 }
 
 // ─── loginWithPhone ────────────────────────────────────────────────────────────
@@ -166,7 +177,8 @@ export async function loginWithPhone(phone, password) {
     })
     if (error) {
       if (error.message?.includes('TOO_MANY_ATTEMPTS')) throw new Error('Quá nhiều lần thử. Vui lòng đợi 15 phút.')
-      throw new Error('Đã có lỗi xảy ra. Vui lòng thử lại.')
+      // RPC có thể throw exception thay vì return empty array khi sai credentials
+      throw new Error('Số điện thoại hoặc mật khẩu không đúng.')
     }
     if (!data?.length) throw new Error('Số điện thoại hoặc mật khẩu không đúng.')
     const row = data[0]

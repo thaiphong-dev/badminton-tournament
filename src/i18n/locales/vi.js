@@ -372,6 +372,80 @@ export default {
     },
   },
 
+  // ── Athlete dashboard ─────────────────────────────────────────────────────────
+  athlete: {
+    tabs: {
+      mine:    'Giải của tôi',
+      profile: 'Hồ sơ',
+    },
+    title:           'Trang VĐV',
+    noTournaments:   'Chưa có giải đấu nào',
+    noTournamentsDesc:'Kiểm tra lại sau khi ban tổ chức tạo giải mới.',
+    noRegistrations: 'Chưa có đơn đăng ký nào',
+    noRegistrationsDesc: 'Vào tab "Giải đang mở" để đăng ký tham gia giải đấu.',
+    regApproved:     'Đăng ký của bạn đã được duyệt!',
+    regRejected:     'Đăng ký của bạn bị từ chối.',
+    pushSubscribe:   'Bật thông báo đẩy',
+    status: {
+      pending:  'Chờ duyệt',
+      approved: 'Đã duyệt',
+      rejected: 'Từ chối',
+    },
+    savePartner:     'Lưu đối',
+    partnerNotePh:   'Lời nhắn cho partner (tuỳ chọn)…',
+    clubPh:          'CLB Cầu Lông XYZ',
+    partnerSaved:    'Đã lưu partner',
+    partnerError:    'Lỗi khi lưu partner',
+  },
+
+  // ── Umpire page ───────────────────────────────────────────────────────────────
+  umpirePage: {
+    title:            'Trang trọng tài',
+    subtitle:         'Các trận đấu được phân công cho bạn',
+    noTournaments:    'Không có giải đấu nào',
+    noTournamentsDesc:'Bạn chưa được phân công cho giải đấu nào.',
+    history:          'Lịch sử',
+    matchesTab:       'Trận đấu',
+    assigned:         'Được phân công',
+    completed:        'Đã hoàn thành',
+    pending:          'Chờ đấu',
+  },
+
+  // ── Court board ───────────────────────────────────────────────────────────────
+  courts: {
+    title:        'Bảng sân đấu',
+    noMatches:    'Chưa có trận đấu nào.',
+    court:        'Sân {n}',
+    wave:         'Lượt {n}',
+    unassigned:   'Chưa phân sân',
+    completed:    'Kết thúc',
+    pending:      'Chờ đấu',
+    inProgress:   'Đang đấu',
+  },
+
+  // ── Group stage ───────────────────────────────────────────────────────────────
+  group: {
+    title:          'Vòng bảng',
+    drawBtn:        'Bốc thăm ngẫu nhiên',
+    startBtn:       'Bắt đầu vòng bảng',
+    nextBtn:        'Chuyển sang Knockout',
+    standings:      'Bảng xếp hạng',
+    matches:        'Lịch thi đấu',
+    noGroups:       'Chưa có bảng đấu nào',
+    group:          'Bảng {n}',
+    qualify:        '{n} vào knockout',
+  },
+
+  // ── Knockout ──────────────────────────────────────────────────────────────────
+  knockout: {
+    title:        'Knockout',
+    bracket:      'Bracket',
+    champion:     'Vô địch',
+    tbd:          'TBD',
+    complete:     'Kết thúc giải',
+    noMatches:    'Chưa có trận đấu knockout nào.',
+  },
+
   // ── Admin dashboard ───────────────────────────────────────────────────────────
   admin: {
     title:       'Admin Panel',

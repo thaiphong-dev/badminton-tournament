@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { sendPush } from '@/lib/utils/sendPush'
 import { cn } from '@/lib/utils/cn'
 import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 import Input from '@/components/ui/Input'
@@ -208,8 +209,39 @@ export default function TournamentEdit() {
         )
       )
 
-      // Bell + PWA notifications are handled server-side by the
-      // on_tournament_info_update DB trigger (Phương án B)
+      // Bell notifications for athletes + umpires are sent server-side by
+      // the on_tournament_info_update DB trigger. PWA push must be sent
+      // client-side because Edge Functions cannot be called from triggers.
+      const tournamentName = sanitizeAndTrim(name, 100)
+      const [athletesRes, umpiresRes] = await Promise.all([
+        supabase
+          .from('tournament_registrations')
+          .select('athlete_id')
+          .eq('tournament_id', id)
+          .eq('status', 'approved'),
+        supabase
+          .from('tournament_umpires')
+          .select('umpire_id')
+          .eq('tournament_id', id),
+      ])
+
+      const pushTitle = 'Giải đấu cập nhật thông tin'
+      for (const row of (athletesRes.data ?? [])) {
+        sendPush(
+          row.athlete_id,
+          pushTitle,
+          `Ban tổ chức vừa cập nhật thông tin giải ${tournamentName}. Vui lòng kiểm tra lại.`,
+          `/tournament/${id}`,
+        )
+      }
+      for (const row of (umpiresRes.data ?? [])) {
+        sendPush(
+          row.umpire_id,
+          pushTitle,
+          `Ban tổ chức vừa cập nhật thông tin giải ${tournamentName}. Vui lòng kiểm tra lịch thi đấu.`,
+          `/tournament/${id}`,
+        )
+      }
 
       navigate(`/tournament/${id}`)
     } catch (err) {

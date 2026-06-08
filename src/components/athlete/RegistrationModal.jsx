@@ -1,15 +1,24 @@
 import { useState } from 'react'
 import { X, Loader2, CheckCircle2, AlertCircle, Search, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { sendPush } from '@/lib/utils/sendPush'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { isDoublesDiscipline } from '@/lib/utils/eventHelpers'
 import { cn } from '@/lib/utils/cn'
+
+const GENDER_RULES = {
+  singles_men:   ['male'],
+  singles_women: ['female'],
+  doubles_men:   ['male'],
+  doubles_women: ['female'],
+  doubles_mixed: ['male', 'female'],
+}
 
 /**
  * Modal cho athlete đăng ký nội dung trong giải đấu.
  * Doubles events → yêu cầu thông tin partner.
  */
-export default function RegistrationModal({ tournament, events, athleteId, athleteName, existingEventIds, onClose, onSuccess }) {
+export default function RegistrationModal({ tournament, events, athleteId, athleteName, existingEventIds, athleteGender, onClose, onSuccess }) {
   const [selected, setSelected]         = useState(new Set())
   const [note, setNote]                 = useState('')
   const [saving, setSaving]             = useState(false)
@@ -24,7 +33,13 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
   const [partnerName, setPartnerName]   = useState('')
   const [partnerClub, setPartnerClub]   = useState('')
 
-  const available      = events.filter(e => !existingEventIds.has(e.id))
+  const available      = events.filter(e => {
+    if (existingEventIds.has(e.id)) return false
+    if (!athleteGender) return true
+    const allowed = GENDER_RULES[e.discipline]
+    if (!allowed) return true
+    return allowed.includes(athleteGender)
+  })
   const selectedDoubles = [...selected].some(eid => {
     const ev = available.find(e => e.id === eid)
     return ev && isDoublesDiscipline(ev.discipline)
@@ -130,8 +145,17 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
       return
     }
 
-    // Bell + PWA notifications to creator are handled server-side by the
-    // on_new_registration DB trigger (Phương án B)
+    // Bell notification to creator is sent by the on_new_registration DB trigger.
+    // PWA push is sent client-side here as a complement (DB trigger push requires
+    // pg_net + trigger_secret to be configured; client push works regardless).
+    if (tournament.creator_id) {
+      sendPush(
+        tournament.creator_id,
+        'Có vận động viên mới đăng ký',
+        `${athleteName || 'Vận động viên'} vừa đăng ký thi đấu trong giải ${tournament.name}.`,
+        `/tournament/${tournament.id}`,
+      )
+    }
 
     setDone(true)
     setSaving(false)

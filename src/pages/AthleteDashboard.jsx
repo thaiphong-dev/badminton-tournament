@@ -7,20 +7,11 @@ import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { cn } from '@/lib/utils/cn'
 import { showToast } from '@/lib/hooks/useApiError'
 import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
-
-const STATUS_BADGE = {
-  pending:  { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
-  approved: { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
-  rejected: { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-}
-
-const TABS = [
-  { id: 'mine',    label: 'Của tôi',  icon: CalendarDays },
-  { id: 'profile', label: 'Hồ sơ',   icon: User },
-]
+import { useI18n } from '@/i18n'
 
 export default function AthleteDashboard() {
   const { profile } = useAuth()
+  const { t } = useI18n()
   const [tab, setTab]               = useState('mine')
   const [newNotifCount, setNewNotifCount] = useState(0)
   const mountKey = useRef(Date.now())
@@ -39,10 +30,10 @@ export default function AthleteDashboard() {
         const newStatus = payload.new?.status
         if (newStatus === 'approved') {
           setNewNotifCount(prev => prev + 1)
-          showToast('Đăng ký của bạn đã được duyệt!', 'success')
+          showToast(t('athlete.regApproved'), 'success')
         } else if (newStatus === 'rejected') {
           setNewNotifCount(prev => prev + 1)
-          showToast('Đăng ký của bạn bị từ chối.', 'error')
+          showToast(t('athlete.regRejected'), 'error')
         }
       })
       .subscribe((status, err) => {

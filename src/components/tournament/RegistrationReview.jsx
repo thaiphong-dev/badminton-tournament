@@ -64,7 +64,7 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
           reg.athlete_id,
           t('reg.approvedPush'),
           t('reg.approvedMsg', { name: tournamentName }),
-          '/',
+          '/athlete',
         )
       }
       setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
@@ -118,7 +118,7 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
           reg.athlete_id,
           t('reg.rejectedPush'),
           t('reg.rejectedMsg', { name: tournamentName }),
-          '/',
+          '/athlete',
         )
       }
       setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected', note: reason } : r))

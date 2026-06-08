@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/lib/hooks/useAuth'
 
 function NotFound() {
@@ -16,11 +17,12 @@ function NotFound() {
  */
 export default function ProtectedRoute({ allowedRoles, children, strictVerify = false }) {
   const { profile, role, verified, verifyFailed } = useAuth()
+  const location = useLocation()
 
   // Admin routes: fail-closed khi verify gặp lỗi mạng
   if (strictVerify && verifyFailed) return <NotFound />
 
-  // Wait for session check before deciding — prevents flash 404 in production
+  // Wait for session check before deciding — prevents flash redirect in production
   if (!verified) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -29,8 +31,12 @@ export default function ProtectedRoute({ allowedRoles, children, strictVerify = 
     )
   }
 
-  if (!profile) return <NotFound />
+  // Chưa đăng nhập → redirect về /login với returnTo để quay lại sau khi login
+  if (!profile) {
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} replace />
+  }
 
+  // Đã đăng nhập nhưng sai role → 404
   if (allowedRoles && !allowedRoles.includes(role)) return <NotFound />
 
   return children

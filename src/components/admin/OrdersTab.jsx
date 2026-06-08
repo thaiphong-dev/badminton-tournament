@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils/cn'
 import { Check, X, ExternalLink, Copy, Download, AlertCircle } from 'lucide-react'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import TablePagination from '@/components/ui/TablePagination'
+import { sendPush } from '@/lib/utils/sendPush'
 
 const PAGE_SIZE = 50
 
@@ -319,6 +320,9 @@ function OrderDetailModal({ order, adminId, onClose, onActionDone }) {
     setConfirming(true)
     setErr(null)
     const isAddon = order.addon !== null
+    const planName = isAddon
+      ? `+${order.addon?.quantity} slot giải đấu`
+      : (order.subscription?.plan?.name ?? 'gói dịch vụ')
     const { error } = isAddon
       ? await supabase.rpc('admin_confirm_addon_order', {
           p_admin_id: adminId,
@@ -330,6 +334,13 @@ function OrderDetailModal({ order, adminId, onClose, onActionDone }) {
         })
     setConfirming(false)
     if (error) { setErr(error.message); return }
+    // Best-effort push — does not block confirm flow
+    sendPush(
+      order.creator_id,
+      '✅ Thanh toán được xác nhận',
+      `${planName} đã được kích hoạt cho tài khoản của bạn.`,
+      '/creator/subscription',
+    )
     onActionDone()
   }
 
@@ -338,6 +349,9 @@ function OrderDetailModal({ order, adminId, onClose, onActionDone }) {
     setRejecting(true)
     setErr(null)
     const isAddon = order.addon !== null
+    const planName = isAddon
+      ? `+${order.addon?.quantity} slot giải đấu`
+      : (order.subscription?.plan?.name ?? 'gói dịch vụ')
     const { error } = isAddon
       ? await supabase.rpc('admin_reject_addon_order', {
           p_admin_id: adminId,
@@ -351,6 +365,13 @@ function OrderDetailModal({ order, adminId, onClose, onActionDone }) {
         })
     setRejecting(false)
     if (error) { setErr(error.message); return }
+    // Best-effort push — does not block reject flow
+    sendPush(
+      order.creator_id,
+      '❌ Thanh toán bị từ chối',
+      `Đơn ${planName} không được xác nhận. Lý do: ${reason.trim()}`,
+      '/creator/subscription',
+    )
     onActionDone()
   }
 

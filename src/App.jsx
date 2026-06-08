@@ -36,6 +36,8 @@ import AttendancePage        from '@/pages/AttendancePage'
 import PlansPage                  from '@/pages/PlansPage'
 import CheckoutPage               from '@/pages/CheckoutPage'
 import CreatorSubscriptionPage    from '@/pages/CreatorSubscriptionPage'
+import CreatorAnalyticsPage       from '@/pages/CreatorAnalyticsPage'
+import LeaderboardPage            from '@/pages/LeaderboardPage'
 import AddOnShopPage              from '@/pages/AddOnShopPage'
 import ProfilePage                from '@/pages/ProfilePage'
 import ScoreboardDisplay          from '@/pages/ScoreboardDisplay'
@@ -133,6 +135,11 @@ function AppShell() {
                   <CreatorSubscriptionPage />
                 </ProtectedRoute>
               } />
+              <Route path="/creator/analytics" element={
+                <ProtectedRoute allowedRoles={['creator', 'admin']}>
+                  <CreatorAnalyticsPage />
+                </ProtectedRoute>
+              } />
               <Route path="/checkout/:planId" element={
                 <ProtectedRoute allowedRoles={['creator', 'admin']}>
                   <CheckoutPage />
@@ -222,6 +229,7 @@ function AppShell() {
               <Route path="/tournament/:id/results/legacy" element={<ResultsPage />} />
 
               {/* ── Public pages (no auth) ── */}
+              <Route path="/leaderboard"          element={<LeaderboardPage />} />
               <Route path="/scoreboard/:matchId"  element={<ScoreboardDisplay />} />
               <Route path="/tournament/:id/live"   element={<TournamentLivePage />} />
               <Route path="/tournament/:id/stats"  element={<PlayerStatsPage />} />

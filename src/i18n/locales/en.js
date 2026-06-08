@@ -372,6 +372,80 @@ export default {
     },
   },
 
+  // ── Athlete dashboard ─────────────────────────────────────────────────────────
+  athlete: {
+    tabs: {
+      mine:    'My Tournaments',
+      profile: 'Profile',
+    },
+    title:           'Athlete Portal',
+    noTournaments:   'No tournaments yet',
+    noTournamentsDesc:'Check back when new tournaments are created.',
+    noRegistrations: 'No registrations yet',
+    noRegistrationsDesc: 'Go to "Open tournaments" to register.',
+    regApproved:     'Your registration has been approved!',
+    regRejected:     'Your registration was rejected.',
+    pushSubscribe:   'Enable push notifications',
+    status: {
+      pending:  'Pending',
+      approved: 'Approved',
+      rejected: 'Rejected',
+    },
+    savePartner:     'Save partner',
+    partnerNotePh:   'Note for partner (optional)…',
+    clubPh:          'Badminton Club XYZ',
+    partnerSaved:    'Partner saved',
+    partnerError:    'Error saving partner',
+  },
+
+  // ── Umpire page ───────────────────────────────────────────────────────────────
+  umpirePage: {
+    title:            'Umpire Portal',
+    subtitle:         'Matches assigned to you',
+    noTournaments:    'No tournaments',
+    noTournamentsDesc:'You have not been assigned to any tournament.',
+    history:          'History',
+    matchesTab:       'Matches',
+    assigned:         'Assigned',
+    completed:        'Completed',
+    pending:          'Scheduled',
+  },
+
+  // ── Court board ───────────────────────────────────────────────────────────────
+  courts: {
+    title:        'Court Board',
+    noMatches:    'No matches yet.',
+    court:        'Court {n}',
+    wave:         'Wave {n}',
+    unassigned:   'Unassigned',
+    completed:    'Completed',
+    pending:      'Scheduled',
+    inProgress:   'In progress',
+  },
+
+  // ── Group stage ───────────────────────────────────────────────────────────────
+  group: {
+    title:          'Group Stage',
+    drawBtn:        'Random draw',
+    startBtn:       'Start group stage',
+    nextBtn:        'Advance to Knockout',
+    standings:      'Standings',
+    matches:        'Schedule',
+    noGroups:       'No groups yet',
+    group:          'Group {n}',
+    qualify:        '{n} advance',
+  },
+
+  // ── Knockout ──────────────────────────────────────────────────────────────────
+  knockout: {
+    title:        'Knockout',
+    bracket:      'Bracket',
+    champion:     'Champion',
+    tbd:          'TBD',
+    complete:     'Complete tournament',
+    noMatches:    'No knockout matches yet.',
+  },
+
   // ── Admin dashboard ───────────────────────────────────────────────────────────
   admin: {
     title:       'Admin Panel',

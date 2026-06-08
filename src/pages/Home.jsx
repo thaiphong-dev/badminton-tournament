@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Trophy, Plus, Calendar, Layers, ChevronRight, ChevronLeft, Loader2,
-  Search, MapPin, ArrowRight, Filter,
+  Search, MapPin, ArrowRight, Filter, Medal,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -244,6 +244,21 @@ export default function Home() {
           )}
         </div>
       )}
+
+      {/* Leaderboard quick link */}
+      <Link
+        to="/leaderboard"
+        className="flex items-center justify-between bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-xl px-4 py-3 mb-4 hover:border-yellow-300 hover:from-yellow-100 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <Medal className="w-5 h-5 text-yellow-600 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Bảng xếp hạng VĐV</p>
+            <p className="text-xs text-gray-500">Xem top VĐV tốt nhất toàn platform</p>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-yellow-400 group-hover:text-yellow-600 transition-colors" />
+      </Link>
 
       {/* Search + Filter bar */}
       <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-5 flex flex-col gap-3">

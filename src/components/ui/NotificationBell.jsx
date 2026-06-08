@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Clock, AlertCircle, AlertTriangle, CheckCircle, CreditCard, Loader2, XCircle, RefreshCw, UserPlus } from 'lucide-react'
+import { Bell, Clock, AlertCircle, AlertTriangle, CheckCircle, CreditCard, Loader2, XCircle, RefreshCw, UserPlus, ShieldAlert } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils/cn'
 import { showToast } from '@/lib/hooks/useApiError'
@@ -78,6 +78,13 @@ function NotifIcon({ type }) {
       </div>
     )
   }
+  if (type === 'tournament_updated_umpire') {
+    return (
+      <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+        <ShieldAlert className="w-4 h-4 text-amber-600" />
+      </div>
+    )
+  }
   if (type === 'new_athlete_registration') {
     return (
       <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
@@ -131,16 +138,24 @@ export default function NotificationBell({ userId, role }) {
           showToast(n.title ?? 'Thanh toán đã được xác nhận!', 'success')
         } else if (n.type === 'payment_rejected') {
           showToast(n.title ?? 'Đơn hàng bị từ chối.', 'error')
+        } else if (n.type === 'new_payment_order') {
+          showToast(n.title ?? 'Có đơn hàng mới cần duyệt.', 'info')
+        } else if (n.type === 'new_addon_order') {
+          showToast(n.title ?? 'Có đơn Add-on mới cần duyệt.', 'info')
         } else if (n.type === 'sub_expired') {
           showToast(n.title ?? 'Gói của bạn đã hết hạn.', 'error')
         } else if (n.type === 'sub_expiring_1' || n.type === 'sub_expiring_3' || n.type === 'sub_expiring_7') {
           showToast(n.title ?? 'Gói của bạn sắp hết hạn.', 'info')
+        } else if (n.type === 'quota_warning') {
+          showToast(n.title ?? 'Bạn đã dùng gần hết slot giải đấu.', 'warning')
         } else if (n.type === 'registration_approved') {
           showToast(n.title ?? 'Đăng ký được chấp thuận!', 'success')
         } else if (n.type === 'registration_rejected') {
           showToast(n.title ?? 'Đăng ký không được chấp thuận.', 'error')
         } else if (n.type === 'tournament_updated') {
           showToast(n.title ?? 'Giải đấu vừa cập nhật thông tin.', 'info')
+        } else if (n.type === 'tournament_updated_umpire') {
+          showToast(n.title ?? 'Giải đấu bạn phụ trách vừa cập nhật.', 'info')
         } else if (n.type === 'new_athlete_registration') {
           showToast(n.title ?? 'Có vận động viên mới đăng ký.', 'info')
         }
@@ -250,10 +265,10 @@ export default function NotificationBell({ userId, role }) {
           {/* Footer */}
           <div className="px-4 py-2.5 border-t border-gray-100 text-center">
             <button
-              onClick={() => { setOpen(false); navigate(role === 'admin' ? '/admin?tab=orders' : role === 'athlete' ? '/athlete/registrations' : '/creator/subscription') }}
+              onClick={() => { setOpen(false); navigate(role === 'admin' ? '/admin?tab=orders' : role === 'athlete' ? '/athlete' : role === 'umpire' ? '/umpire' : '/creator/subscription') }}
               className="text-xs text-blue-600 hover:underline"
             >
-              {role === 'admin' ? 'Xem tab Đơn hàng →' : role === 'athlete' ? 'Xem đăng ký của tôi →' : 'Xem trang quản lý gói →'}
+              {role === 'admin' ? 'Xem tab Đơn hàng →' : role === 'athlete' ? 'Xem đăng ký của tôi →' : role === 'umpire' ? 'Xem trang trọng tài →' : 'Xem trang quản lý gói →'}
             </button>
           </div>
         </div>

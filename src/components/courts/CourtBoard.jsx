@@ -278,7 +278,7 @@ export default function CourtBoard({ event, matches, playerMap, scoringRules, on
 
     for (const id of athleteIds) {
       if (subscribedIds.has(id)) {
-        sendPush(id, '📞 Vào sân ngay!', `Sân ${courtNum} đang gọi bạn vào thi đấu!`, '/')
+        sendPush(id, '📞 Vào sân ngay!', `Sân ${courtNum} đang gọi bạn vào thi đấu!`, '/athlete')
       }
     }
 

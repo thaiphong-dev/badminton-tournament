@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { useUmpireRealtime } from '@/lib/hooks/useUmpireRealtime'
 import { ShieldCheck, ChevronRight, Loader2, LogOut, ChevronLeft, Trophy, Clock, CheckCircle2, Zap, AlertCircle, History } from 'lucide-react'
 import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
+import { useI18n } from '@/i18n'
 
 
 const STAGE_LABELS = {
@@ -23,6 +24,7 @@ const TOURNAMENT_STATUS = {
 export default function UmpirePage() {
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
+  const { t } = useI18n()
 
   const [view, setView]                     = useState('assigned') // 'assigned' | 'history'
   const [tournaments, setTournaments]       = useState([])
@@ -206,7 +208,7 @@ export default function UmpirePage() {
               }}
             >
               <ShieldCheck className="w-4 h-4" />
-              Phân công
+              {t('umpirePage.assigned')}
             </button>
             <button
               onClick={() => setView('history')}
@@ -218,7 +220,7 @@ export default function UmpirePage() {
               }}
             >
               <History className="w-4 h-4" />
-              Lịch sử
+              {t('umpirePage.history')}
             </button>
           </div>
         )}
@@ -227,7 +229,7 @@ export default function UmpirePage() {
         {!selectedTmt && view === 'history' && (
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: '#f1f5f9', marginBottom: 16 }}>
-              Lịch sử điều hành
+              {t('umpirePage.history')}
             </h2>
             {loadingHistory ? (
               <div className="flex justify-center py-16">

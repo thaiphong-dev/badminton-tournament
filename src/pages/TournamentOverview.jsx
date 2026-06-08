@@ -14,6 +14,19 @@ import {
   DISCIPLINE_LABELS, DISCIPLINE_ICONS, DISCIPLINE_LIST,
   EVENT_STATUS_BADGE,
 } from '@/lib/constants'
+
+const GENDER_RULES = {
+  singles_men:    ['male'],
+  singles_women:  ['female'],
+  doubles_men:    ['male'],
+  doubles_women:  ['female'],
+  doubles_mixed:  ['male', 'female'],
+}
+
+function genderLabel(allowed) {
+  if (allowed?.length === 1) return allowed[0] === 'male' ? 'Nam' : 'Nữ'
+  return 'Nam hoặc Nữ'
+}
 import { isTournamentComplete } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
@@ -68,6 +81,7 @@ export default function TournamentOverview() {
   const [showQrModal, setShowQrModal]   = useState(false)
   const [myRegEventIds, setMyRegEventIds] = useState(new Set())
   const [showRegModal, setShowRegModal]   = useState(false)
+  const [athleteGender, setAthleteGender] = useState(undefined) // undefined = not loaded yet
 
   useEffect(() => {
     fetchData(true)
@@ -107,6 +121,16 @@ export default function TournamentOverview() {
       .eq('athlete_id', profile.id)
       .then(({ data }) => setMyRegEventIds(new Set((data || []).map(r => r.event_id))))
   }, [id, profile?.id])
+
+  useEffect(() => {
+    if (!profile?.id || profile.role !== 'athlete') return
+    supabase
+      .from('profiles')
+      .select('gender')
+      .eq('id', profile.id)
+      .single()
+      .then(({ data }) => setAthleteGender(data?.gender ?? null))
+  }, [profile?.id, profile?.role])
 
   async function fetchData(showLoading = true) {
     if (showLoading) setLoading(true)
@@ -182,6 +206,12 @@ export default function TournamentOverview() {
   const isAthlete      = profile?.role === 'athlete'
   const canRegister    = isAthlete && tournament?.registration_open && tournament.status !== 'completed'
   const alreadyRegAll  = canRegister && events.length > 0 && events.every(e => myRegEventIds.has(e.id))
+  const allRemainingBlocked = canRegister && athleteGender != null && events.length > 0
+    && events.filter(e => !myRegEventIds.has(e.id)).length > 0
+    && events.filter(e => !myRegEventIds.has(e.id)).every(e => {
+      const allowed = GENDER_RULES[e.discipline]
+      return allowed && !allowed.includes(athleteGender)
+    })
   const isSuspended    = !!tournament?.is_suspended
   const canUseUmpire   = role === 'admin' || hasFeature('umpire_assign')
 
@@ -394,20 +424,40 @@ export default function TournamentOverview() {
       {isAthlete && events.length > 0 && !allDone && (
         <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
           <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Đăng ký thi đấu</p>
+
+          {/* No gender on profile → prompt to update */}
+          {athleteGender === null && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-3 text-sm text-amber-800">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>
+                Cập nhật giới tính trong{' '}
+                <Link to="/profile" className="font-semibold underline hover:text-amber-900">hồ sơ</Link>
+                {' '}để đăng ký tham gia.
+              </span>
+            </div>
+          )}
+
           <div className="space-y-1.5 mb-4">
             {events.map(ev => {
               const registered = myRegEventIds.has(ev.id)
+              const allowedGenders = GENDER_RULES[ev.discipline]
+              const genderBlocked = athleteGender !== undefined && athleteGender !== null
+                && allowedGenders && !allowedGenders.includes(athleteGender)
               return (
                 <div key={ev.id} className="flex items-center justify-between py-1">
                   <span className="text-sm text-gray-700 flex items-center gap-1.5">
                     <span>{DISCIPLINE_ICONS[ev.discipline] ?? '🏸'}</span>
                     {DISCIPLINE_LABELS[ev.discipline] ?? ev.name}
                   </span>
-                  {registered && (
+                  {registered ? (
                     <span className="text-xs text-green-600 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Đã đăng ký
                     </span>
-                  )}
+                  ) : genderBlocked ? (
+                    <span className="text-xs text-gray-400 italic">
+                      Dành cho {genderLabel(allowedGenders)}
+                    </span>
+                  ) : null}
                 </div>
               )
             })}
@@ -415,15 +465,22 @@ export default function TournamentOverview() {
           {canRegister ? (
             <button
               onClick={() => setShowRegModal(true)}
-              disabled={alreadyRegAll}
+              disabled={alreadyRegAll || athleteGender === null || allRemainingBlocked}
+              title={
+                athleteGender === null ? 'Cập nhật giới tính trong hồ sơ trước'
+                : allRemainingBlocked ? 'Không có nội dung phù hợp giới tính của bạn'
+                : undefined
+              }
               className={cn(
                 'w-full py-2.5 rounded-xl text-sm font-semibold transition-colors',
-                alreadyRegAll
+                alreadyRegAll || athleteGender === null || allRemainingBlocked
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700',
               )}
             >
-              {alreadyRegAll ? 'Đã đăng ký tất cả nội dung' : '+ Đăng ký tham gia'}
+              {alreadyRegAll ? 'Đã đăng ký tất cả nội dung'
+                : allRemainingBlocked ? 'Không có nội dung phù hợp'
+                : '+ Đăng ký tham gia'}
             </button>
           ) : (
             <div className="w-full py-2.5 rounded-xl text-sm text-center text-gray-400 bg-gray-50">
@@ -443,6 +500,7 @@ export default function TournamentOverview() {
           athleteId={profile.id}
           athleteName={profile.name}
           existingEventIds={myRegEventIds}
+          athleteGender={athleteGender}
           onClose={() => setShowRegModal(false)}
           onSuccess={() => {
             setShowRegModal(false)

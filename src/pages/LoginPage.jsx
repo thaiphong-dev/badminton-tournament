@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Trophy, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { useAuth, loginWithPhone, defaultPathForRole } from '@/lib/hooks/useAuth'
 
 export default function LoginPage() {
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const location  = useLocation()
   const { profile } = useAuth()
 
   const [phone, setPhone]       = useState('')
@@ -13,9 +14,11 @@ export default function LoginPage() {
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
 
-  // Đã đăng nhập → redirect ngay
+  const returnTo = new URLSearchParams(location.search).get('returnTo') || null
+
+  // Đã đăng nhập → redirect ngay (tới returnTo nếu có, ngược lại tới dashboard)
   useEffect(() => {
-    if (profile) navigate(defaultPathForRole(profile.role), { replace: true })
+    if (profile) navigate(returnTo ?? defaultPathForRole(profile.role), { replace: true })
   }, [profile])
 
   async function handleSubmit(e) {
@@ -27,7 +30,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const prof = await loginWithPhone(phone, password)
-      navigate(defaultPathForRole(prof.role), { replace: true })
+      navigate(returnTo ?? defaultPathForRole(prof.role), { replace: true })
     } catch (err) {
       const msg = err.message ?? ''
       if (msg.includes('too_many_attempts')) {
@@ -102,6 +105,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPw(v => !v)}
+                aria-label={showPw ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
