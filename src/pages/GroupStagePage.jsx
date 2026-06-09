@@ -492,7 +492,7 @@ function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Lịch thi đấu</p>
           <MatchList

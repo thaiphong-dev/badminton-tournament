@@ -17,6 +17,7 @@ const KEY_TO_COL = {
 import SetBreakScreen from '@/components/umpire/SetBreakScreen'
 import MatchSummaryScreen from '@/components/umpire/MatchSummaryScreen'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { cn } from '@/lib/utils/cn'
 import '@/components/umpire/UmpireScoring.scss'
 
 export default function UmpireMatchPage() {
@@ -319,56 +320,41 @@ export default function UmpireMatchPage() {
     navigate(-1)
   }
 
-  if (loading) return <div className="umpire-screen screen-center"><LoadingSpinner /></div>
-  if (error) return <div className="umpire-screen screen-center"><p className="text-red-400">{error}</p></div>
+  if (loading) return (
+    <div className="fixed inset-0 bg-surface flex items-center justify-center">
+      <LoadingSpinner />
+    </div>
+  )
+  if (error) return (
+    <div className="fixed inset-0 bg-surface flex items-center justify-center">
+      <p className="text-red-500 text-sm">{error}</p>
+    </div>
+  )
 
   // GL3-D3: restore/discard banner when saved session found
   if (pendingRestore && player1 && player2) {
     const { savedGs, freshGs } = pendingRestore
     return (
-      <div className="umpire-screen screen-center">
-        <div className="screen-content-max" style={{ padding: '2rem', textAlign: 'center' }}>
-          <p className="screen-title" style={{ marginBottom: '0.5rem' }}>Phiên trận chưa hoàn thành</p>
-          <p className="screen-subtitle" style={{ marginBottom: '2rem' }}>
-            {player1.name} vs {player2.name}<br />
-            Set {savedGs.currentSet} — {savedGs.currentSetP1} : {savedGs.currentSetP2}
-          </p>
-          <div className="selection-grid">
-            <button
-              className="primary-btn ready"
-              onClick={async () => {
-                // BTC may have set status back to 'calling' via recall — restore to active
-                await supabase.from('matches').update({ status: 'active' }).eq('id', matchId)
-                setGameState(savedGs)
-                setPendingRestore(null)
-              }}
-            >
-              Tiếp tục từ điểm đã lưu
-            </button>
-            <button
-              className="secondary-link-btn"
-              style={{ border: '1px solid #ef4444', color: '#ef4444', borderRadius: '0.5rem', padding: '0.75rem' }}
-              onClick={async () => {
-                try { localStorage.removeItem(storageKey) } catch {}
-                await supabase.from('matches').update({
-                  live_score_p1:  0,
-                  live_score_p2:  0,
-                  live_set_p1:    0,
-                  live_set_p2:    0,
-                  current_set:    1,
-                  player1_scores: [],
-                  player2_scores: [],
-                  status:         'active',
-                }).eq('id', matchId)
-                setGameState(freshGs)
-                setPendingRestore(null)
-              }}
-            >
-              Bỏ qua — bắt đầu lại
-            </button>
-          </div>
-        </div>
-      </div>
+      <RestoreScreen
+        title="Phiên trận chưa hoàn thành"
+        subtitle={`${player1.name} vs ${player2.name}`}
+        detail={`Set ${savedGs.currentSet} — ${savedGs.currentSetP1} : ${savedGs.currentSetP2}`}
+        primaryLabel="Tiếp tục từ điểm đã lưu"
+        onPrimary={async () => {
+          await supabase.from('matches').update({ status: 'active' }).eq('id', matchId)
+          setGameState(savedGs)
+          setPendingRestore(null)
+        }}
+        onReset={async () => {
+          try { localStorage.removeItem(storageKey) } catch {}
+          await supabase.from('matches').update({
+            live_score_p1: 0, live_score_p2: 0, live_set_p1: 0, live_set_p2: 0,
+            current_set: 1, player1_scores: [], player2_scores: [], status: 'active',
+          }).eq('id', matchId)
+          setGameState(freshGs)
+          setPendingRestore(null)
+        }}
+      />
     )
   }
 
@@ -377,53 +363,24 @@ export default function UmpireMatchPage() {
     const { dbGs, freshGs } = pendingDBRestore
     const sets = dbGs.completedSets ?? []
     return (
-      <div className="umpire-screen screen-center">
-        <div className="screen-content-max" style={{ padding: '2rem', textAlign: 'center' }}>
-          <p className="screen-title" style={{ marginBottom: '0.5rem' }}>Trận đang giữa chừng</p>
-          <p className="screen-subtitle" style={{ marginBottom: '0.5rem' }}>
-            {player1.name} vs {player2.name}
-          </p>
-          {sets.length > 0 && (
-            <p className="screen-subtitle" style={{ marginBottom: '0.5rem', fontSize: '0.85em' }}>
-              {sets.map((s, i) => `H${i + 1}: ${s.p1}–${s.p2}`).join('  ')}
-            </p>
-          )}
-          <p className="screen-subtitle" style={{ marginBottom: '2rem' }}>
-            Hiệp {dbGs.currentSet} — {dbGs.currentSetP1} : {dbGs.currentSetP2}
-          </p>
-          <div className="selection-grid">
-            <button
-              className="primary-btn ready"
-              onClick={() => {
-                setGameState(dbGs)
-                setPendingDBRestore(null)
-              }}
-            >
-              Tiếp tục từ điểm hiện tại
-            </button>
-            <button
-              className="secondary-link-btn"
-              style={{ border: '1px solid #ef4444', color: '#ef4444', borderRadius: '0.5rem', padding: '0.75rem' }}
-              onClick={async () => {
-                await supabase.from('matches').update({
-                  live_score_p1:  0,
-                  live_score_p2:  0,
-                  live_set_p1:    0,
-                  live_set_p2:    0,
-                  current_set:    1,
-                  player1_scores: [],
-                  player2_scores: [],
-                  status:         'active',
-                }).eq('id', matchId)
-                setPendingDBRestore(null)
-                setGameState(freshGs)
-              }}
-            >
-              Bỏ qua — bắt đầu lại từ 0
-            </button>
-          </div>
-        </div>
-      </div>
+      <RestoreScreen
+        title="Trận đang giữa chừng"
+        subtitle={`${player1.name} vs ${player2.name}`}
+        detail={[
+          sets.length > 0 ? sets.map((s, i) => `H${i + 1}: ${s.p1}–${s.p2}`).join('  ') : null,
+          `Hiệp ${dbGs.currentSet} — ${dbGs.currentSetP1} : ${dbGs.currentSetP2}`,
+        ].filter(Boolean).join('\n')}
+        primaryLabel="Tiếp tục từ điểm hiện tại"
+        onPrimary={() => { setGameState(dbGs); setPendingDBRestore(null) }}
+        onReset={async () => {
+          await supabase.from('matches').update({
+            live_score_p1: 0, live_score_p2: 0, live_set_p1: 0, live_set_p2: 0,
+            current_set: 1, player1_scores: [], player2_scores: [], status: 'active',
+          }).eq('id', matchId)
+          setPendingDBRestore(null)
+          setGameState(freshGs)
+        }}
+      />
     )
   }
 
@@ -475,7 +432,7 @@ function ScoreboardLinkButton({ matchId }) {
   return (
     <button
       onClick={handleCopy}
-      className="fixed bottom-4 right-4 z-50 flex items-center gap-1.5 bg-gray-800/90 hover:bg-gray-700 text-white text-xs font-medium px-3 py-2 rounded-full border border-gray-600 transition-colors backdrop-blur"
+      className="fixed bottom-4 right-4 z-50 flex items-center gap-1.5 bg-white/90 hover:bg-white text-gray-700 text-xs font-medium px-3 py-2 rounded-full border border-gray-200 shadow transition-colors backdrop-blur"
       title="Copy link màn hình chiếu"
     >
       {copied ? '✓ Đã copy' : '📺 Link màn hình'}
@@ -483,9 +440,37 @@ function ScoreboardLinkButton({ matchId }) {
   )
 }
 
+function RestoreScreen({ title, subtitle, detail, primaryLabel, onPrimary, onReset }) {
+  return (
+    <div className="fixed inset-0 bg-surface flex flex-col items-center justify-center px-6">
+      <div className="w-full max-w-xs text-center space-y-4">
+        <div>
+          <h2 className="text-lg font-extrabold text-gray-900 mb-1">{title}</h2>
+          <p className="text-sm text-gray-500 whitespace-pre-line">{subtitle}</p>
+          {detail && <p className="text-sm text-blue-600 font-semibold mt-1 whitespace-pre-line">{detail}</p>}
+        </div>
+        <div className="flex flex-col gap-3 pt-2">
+          <button
+            onClick={onPrimary}
+            className="w-full py-4 rounded-2xl bg-amber-400 text-gray-900 font-extrabold text-base shadow-lg shadow-amber-100 active:scale-[0.98] transition-all"
+          >
+            {primaryLabel}
+          </button>
+          <button
+            onClick={onReset}
+            className="w-full py-3 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-sm hover:bg-red-50 transition-colors"
+          >
+            Bỏ qua — bắt đầu lại từ 0
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ConfirmStartScreen({ player1, player2, isDoubles, onConfirm, onCancel }) {
-  const [selectedTeam, setSelectedTeam] = useState(null)
-  const [selectedServer, setSelectedServer] = useState(null)
+  const [selectedTeam,     setSelectedTeam]     = useState(null)
+  const [selectedServer,   setSelectedServer]   = useState(null)
   const [selectedReceiver, setSelectedReceiver] = useState(null)
 
   const splitPair = (name) => {
@@ -498,76 +483,93 @@ function ConfirmStartScreen({ player1, player2, isDoubles, onConfirm, onCancel }
     { id: 'p2', name: player2.name, players: splitPair(player2.name) },
   ]
   const receivingTeam = selectedTeam === 'p1' ? teams[1] : (selectedTeam === 'p2' ? teams[0] : null)
-
   const isReady = selectedTeam && (!isDoubles || (selectedServer && selectedReceiver))
 
   return (
-    <div className="umpire-screen">
-      <div className="screen-header">
-        <p className="screen-subtitle">Trận đấu sắp bắt đầu</p>
-        <h1 className="screen-title">CHUẨN BỊ</h1>
+    <div className="fixed inset-0 bg-surface flex flex-col overflow-y-auto">
+      {/* Header */}
+      <div className="pt-10 pb-4 text-center px-6">
+        <p className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-2">Trận đấu sắp bắt đầu</p>
+        <h1 className="text-3xl font-black text-gray-900 italic">CHUẨN BỊ</h1>
       </div>
 
-      <div className="screen-content-max">
-        <div className="space-y-3">
-          <p className="step-indicator">Bước 1: Đội nào giao cầu trước?</p>
-          <div className="selection-grid">
-            {teams.map(t => (
-              <button 
-                key={t.id}
-                onClick={() => { setSelectedTeam(t.id); setSelectedServer(null); setSelectedReceiver(null) }}
-                className={`selection-btn ${selectedTeam === t.id ? 'active' : ''}`}
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="flex-1 flex flex-col items-center px-6 gap-5 max-w-sm mx-auto w-full">
+
+        <SelectionBlock
+          label="Bước 1: Đội nào giao cầu trước?"
+          options={teams}
+          selected={selectedTeam}
+          onSelect={(id) => { setSelectedTeam(id); setSelectedServer(null); setSelectedReceiver(null) }}
+        />
 
         {isDoubles && selectedTeam && (
-          <div className="space-y-3">
-            <p className="step-indicator">Bước 2: Ai là người giao cầu?</p>
-            <div className="selection-grid">
-              {teams.find(t => t.id === selectedTeam).players.filter(Boolean).map(p => (
-                <button 
-                  key={p}
-                  onClick={() => setSelectedServer(p)}
-                  className={`selection-btn ${selectedServer === p ? 'active' : ''}`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SelectionBlock
+            label="Bước 2: Ai là người giao cầu?"
+            options={teams.find(t => t.id === selectedTeam).players.filter(Boolean).map(p => ({ id: p, name: p }))}
+            selected={selectedServer}
+            onSelect={setSelectedServer}
+          />
         )}
 
         {isDoubles && selectedTeam && selectedServer && (
-          <div className="space-y-3">
-            <p className="step-indicator">Bước 3: Ai là người nhận cầu?</p>
-            <div className="selection-grid">
-              {receivingTeam.players.filter(Boolean).map(p => (
-                <button 
-                  key={p}
-                  onClick={() => setSelectedReceiver(p)}
-                  className={`selection-btn ${selectedReceiver === p ? 'active' : ''}`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SelectionBlock
+            label="Bước 3: Ai là người nhận cầu?"
+            options={receivingTeam.players.filter(Boolean).map(p => ({ id: p, name: p }))}
+            selected={selectedReceiver}
+            onSelect={setSelectedReceiver}
+          />
         )}
       </div>
 
-      <div className="action-footer">
-        <button 
+      <div className="px-6 pt-6 pb-8 max-w-sm mx-auto w-full flex flex-col gap-3">
+        <button
           disabled={!isReady}
-          onClick={() => onConfirm(selectedTeam, isDoubles ? selectedServer : teams.find(t => t.id === selectedTeam).name, isDoubles ? selectedReceiver : receivingTeam.name)}
-          className={`primary-btn ${isReady ? 'ready' : ''}`}
+          onClick={() => onConfirm(
+            selectedTeam,
+            isDoubles ? selectedServer   : teams.find(t => t.id === selectedTeam).name,
+            isDoubles ? selectedReceiver : receivingTeam.name,
+          )}
+          className={cn(
+            'w-full py-5 rounded-2xl font-extrabold text-lg transition-all',
+            isReady
+              ? 'bg-amber-400 text-gray-900 shadow-lg shadow-amber-100 active:scale-[0.98]'
+              : 'bg-gray-100 text-gray-300 cursor-not-allowed',
+          )}
         >
-          SẴN SÀNG
+          Sẵn sàng
         </button>
-        <button onClick={onCancel} className="secondary-link-btn">Huỷ bỏ</button>
+        <button
+          onClick={onCancel}
+          className="w-full py-2.5 text-sm font-bold text-gray-400 uppercase tracking-widest italic"
+        >
+          Huỷ bỏ
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SelectionBlock({ label, options, selected, onSelect }) {
+  return (
+    <div className="w-full">
+      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest text-center mb-2">
+        {label}
+      </p>
+      <div className="flex gap-3">
+        {options.map(o => (
+          <button
+            key={o.id}
+            onClick={() => onSelect(o.id)}
+            className={cn(
+              'flex-1 py-4 rounded-xl border-2 font-bold text-sm transition-all',
+              selected === o.id
+                ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100'
+                : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300',
+            )}
+          >
+            {o.name}
+          </button>
+        ))}
       </div>
     </div>
   )

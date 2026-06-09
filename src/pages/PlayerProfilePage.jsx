@@ -138,15 +138,15 @@ export default function PlayerProfilePage() {
         ]} />
 
         {/* ── Player card ─────────────────────────────────────────────────────── */}
-        <div className="bg-gray-900 text-white rounded-2xl p-6">
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-start gap-4 mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-2xl font-bold shrink-0">
+            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-2xl font-bold text-white shrink-0">
               {player.name?.[0]?.toUpperCase() ?? '?'}
             </div>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold leading-tight">{player.name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 leading-tight">{player.name}</h1>
               {player.club && (
-                <span className="mt-1 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-300">
+                <span className="mt-1 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
                   {player.club}
                 </span>
               )}
@@ -161,9 +161,9 @@ export default function PlayerProfilePage() {
               { label: 'Set thắng / thua', value: `${stats.setsWon} / ${stats.setsLost}` },
               { label: 'Tổng điểm', value: `${stats.ptsFor}` },
             ].map(({ label, value }) => (
-              <div key={label} className="bg-white/10 rounded-xl p-3">
-                <p className="text-xs text-gray-400 mb-1">{label}</p>
-                <p className="text-lg font-bold">{value}</p>
+              <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">{label}</p>
+                <p className="text-lg font-bold text-gray-900">{value}</p>
               </div>
             ))}
           </div>

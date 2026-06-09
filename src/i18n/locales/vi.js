@@ -61,7 +61,7 @@ export default {
     buyMore:          'Mua thêm',
     plans:            'Gói dịch vụ',
     pricing:          'Bảng giá',
-    createTournament: '+ Tạo giải đấu',
+    createTournament: 'Tạo giải đấu',
     login:            'Đăng nhập',
     profile:          'Hồ sơ',
     adminPanel:       'Admin Panel',

@@ -31,7 +31,7 @@ export default function AttendancePage() {
     setError(null)
     try {
       const [tRes, eRes, pRes] = await Promise.all([
-        supabase.from('tournaments').select('id, name').eq('id', tournamentId).single(),
+        supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
         supabase.from('events').select('*').eq('id', eventId).single(),
         supabase.from('players').select('*').eq('event_id', eventId).order('seed').order('name'),
       ])

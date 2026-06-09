@@ -263,7 +263,7 @@ export default function Home() {
       {/* Search + Filter bar */}
       <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-5 flex flex-col gap-3">
         {/* Search row */}
-        <div className="relative max-w-sm">
+        <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -335,10 +335,10 @@ export default function Home() {
 
       {/* CTA for unauthenticated */}
       {isPublic && (
-        <div className="mt-12 bg-blue-50 border border-blue-100 rounded-2xl p-8 text-center">
+        <div className="mt-12 bg-blue-50 border border-blue-100 rounded-2xl p-5 sm:p-8 text-center">
           <h3 className="font-bold text-gray-900 mb-2">{t('home.ctaTitle')}</h3>
           <p className="text-gray-500 text-sm mb-5">{t('home.ctaSubtitle')}</p>
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               to="/register"
               className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"

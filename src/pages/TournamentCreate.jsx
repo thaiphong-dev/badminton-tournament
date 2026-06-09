@@ -365,7 +365,7 @@ export default function TournamentCreate() {
               onChange={e => setLocation(e.target.value)}
             />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label={<>{t('create.startDate')} <span className="text-red-500">*</span></>}
                 type="date"

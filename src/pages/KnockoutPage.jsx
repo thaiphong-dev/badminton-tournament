@@ -459,7 +459,7 @@ export default function KnockoutPage() {
         {/* Mode toggle */}
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <p className="text-sm font-semibold text-gray-700 mb-4">Chọn cách phân hạt giống:</p>
-          <div className="flex gap-3 mb-6">
+          <div className="flex flex-col sm:flex-row gap-3 mb-6">
             <button
               onClick={() => setDrawMode('auto')}
               className={cn(

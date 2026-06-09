@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Check, X, Feather } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import useCallStore from '@/lib/stores/callStore'
+import { cn } from '@/lib/utils/cn'
 
 const COUNTDOWN_TOTAL = 180
 const R = 36
@@ -55,17 +56,17 @@ export default function IncomingCallOverlay() {
   const [loading,     setLoading]     = useState(false)
 
   useEffect(() => {
-    setCountdown(COUNTDOWN_TOTAL) // eslint-disable-line react-hooks/set-state-in-effect
+    setCountdown(COUNTDOWN_TOTAL)
     setDeclining(false)
     setDeclineNote('')
     setLoading(false)
   }, [incomingCall?.matchId])
 
-  useEffect(() => { // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
     if (!incomingCall) return
     const stop = createRingtone()
     return () => stop()
-  }, [incomingCall?.matchId])
+  }, [incomingCall?.matchId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleAccept() {
     if (!incomingCall) return
@@ -100,7 +101,7 @@ export default function IncomingCallOverlay() {
 
   useEffect(() => {
     if (!incomingCall || loading) return
-    if (countdown <= 0) { handleDecline('timeout'); return } // eslint-disable-line react-hooks/set-state-in-effect
+    if (countdown <= 0) { handleDecline('timeout'); return }
     const t = setInterval(() => setCountdown(c => c - 1), 1000)
     return () => clearInterval(t)
   }, [countdown, incomingCall, loading]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -112,120 +113,72 @@ export default function IncomingCallOverlay() {
   const urgent = countdown <= 30
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'linear-gradient(160deg, #0a0f1a 0%, #0d1627 100%)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: 24,
-    }}>
+    <div className="fixed inset-0 z-[9999] bg-surface flex flex-col items-center justify-center px-6">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: 'rgba(34,211,238,0.12)', border: '1px solid rgba(34,211,238,0.2)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Feather size={18} color="#22d3ee" />
+      <div className="flex items-center gap-2.5 mb-2">
+        <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
+          <Feather size={18} className="text-blue-600" />
         </div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.08em' }}>
-          PHÂN CÔNG TRỌNG TÀI
+        <p className="text-sm font-bold text-gray-500 tracking-widest uppercase">
+          Phân công trọng tài
         </p>
       </div>
 
       {/* Stage badge */}
       {matchLabel && (
-        <div style={{
-          display: 'inline-flex', alignItems: 'center',
-          background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.18)',
-          borderRadius: 99, padding: '3px 12px', marginBottom: 20,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#22d3ee', letterSpacing: '0.06em' }}>
-            {matchLabel.toUpperCase()}
+        <div className="inline-flex items-center bg-blue-50 border border-blue-200 rounded-full px-3 py-1 mb-5">
+          <span className="text-xs font-bold text-blue-600 tracking-wide uppercase">
+            {matchLabel}
           </span>
         </div>
       )}
 
       {/* Match card */}
-      <div style={{
-        background: '#111827', borderRadius: 20,
-        border: '1px solid rgba(255,255,255,0.07)',
-        width: '100%', maxWidth: 340,
-        overflow: 'hidden', marginBottom: 28,
-      }}>
-        {/* Match number bar */}
+      <div className="w-full max-w-sm bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm mb-7">
         {matchNumber && (
-          <div style={{
-            background: 'rgba(255,255,255,0.04)',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            padding: '8px 20px', textAlign: 'center',
-          }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em' }}>
-              {matchNumber.toUpperCase()}
+          <div className="bg-gray-50 border-b border-gray-100 px-5 py-2 text-center">
+            <span className="text-xs font-bold text-gray-400 tracking-widest uppercase">
+              {matchNumber}
             </span>
           </div>
         )}
-
-        {/* Players row */}
-        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+        <div className="flex items-stretch">
           {/* Player 1 */}
-          <div style={{
-            flex: 1, padding: '22px 16px', textAlign: 'center',
-            borderRight: '1px solid rgba(255,255,255,0.06)',
-          }}>
-            <div style={{
-              fontSize: 10, fontWeight: 700, color: 'rgba(34,211,238,0.6)',
-              letterSpacing: '0.1em', marginBottom: 8,
-            }}>BÊN A</div>
-            <p style={{
-              fontSize: player1Name?.length > 16 ? 13 : 15,
-              fontWeight: 800, color: '#e2e8f0', lineHeight: 1.3,
-              wordBreak: 'break-word',
-            }}>{player1Name}</p>
+          <div className="flex-1 px-4 py-5 text-center border-r border-gray-100">
+            <div className="text-[10px] font-bold text-blue-500 tracking-widest mb-2 uppercase">Bên A</div>
+            <p className={cn('font-extrabold text-gray-900 leading-snug break-words', player1Name?.length > 16 ? 'text-sm' : 'text-base')}>
+              {player1Name}
+            </p>
           </div>
-
-          {/* VS divider */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 4px', minWidth: 40,
-          }}>
-            <span style={{ fontSize: 11, fontWeight: 900, color: 'rgba(255,255,255,0.18)', letterSpacing: '0.05em' }}>
-              VS
-            </span>
+          {/* VS */}
+          <div className="flex items-center justify-center px-1 min-w-[36px]">
+            <span className="text-xs font-black text-gray-300">VS</span>
           </div>
-
           {/* Player 2 */}
-          <div style={{
-            flex: 1, padding: '22px 16px', textAlign: 'center',
-            borderLeft: '1px solid rgba(255,255,255,0.06)',
-          }}>
-            <div style={{
-              fontSize: 10, fontWeight: 700, color: 'rgba(251,191,36,0.6)',
-              letterSpacing: '0.1em', marginBottom: 8,
-            }}>BÊN B</div>
-            <p style={{
-              fontSize: player2Name?.length > 16 ? 13 : 15,
-              fontWeight: 800, color: '#e2e8f0', lineHeight: 1.3,
-              wordBreak: 'break-word',
-            }}>{player2Name}</p>
+          <div className="flex-1 px-4 py-5 text-center border-l border-gray-100">
+            <div className="text-[10px] font-bold text-amber-500 tracking-widest mb-2 uppercase">Bên B</div>
+            <p className={cn('font-extrabold text-gray-900 leading-snug break-words', player2Name?.length > 16 ? 'text-sm' : 'text-base')}>
+              {player2Name}
+            </p>
           </div>
         </div>
       </div>
 
       {/* Countdown ring */}
-      <div style={{ position: 'relative', width: 90, height: 90, marginBottom: 32 }}>
+      <div className="relative w-[90px] h-[90px] mb-8">
         <svg width="90" height="90" style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx="45" cy="45" r={R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+          <circle cx="45" cy="45" r={R} fill="none" stroke="#e5e7eb" strokeWidth="6" />
           <circle
             cx="45" cy="45" r={R} fill="none"
-            stroke={urgent ? '#ef4444' : '#22d3ee'} strokeWidth="6"
+            stroke={urgent ? '#ef4444' : '#2563eb'} strokeWidth="6"
             strokeDasharray={C} strokeDashoffset={offset}
             strokeLinecap="round"
             style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
           />
         </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 20, fontWeight: 900, fontFamily: 'monospace', color: urgent ? '#ef4444' : '#fff' }}>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={cn('text-xl font-black font-mono', urgent ? 'text-red-500' : 'text-gray-800')}>
             {String(Math.floor(countdown / 60)).padStart(2, '0')}:{String(countdown % 60).padStart(2, '0')}
           </span>
         </div>
@@ -233,55 +186,42 @@ export default function IncomingCallOverlay() {
 
       {/* Decline flow */}
       {declining ? (
-        <div style={{ width: '100%', maxWidth: 320 }}>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 12, textAlign: 'center' }}>
-            Lý do từ chối (tuỳ chọn)
-          </p>
+        <div className="w-full max-w-xs">
+          <p className="text-sm text-gray-400 mb-3 text-center">Lý do từ chối (tuỳ chọn)</p>
           <input
             value={declineNote}
             onChange={e => setDeclineNote(e.target.value)}
             placeholder="Nhập lý do..."
-            style={{
-              width: '100%', padding: '14px 16px', borderRadius: 14, boxSizing: 'border-box',
-              background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)',
-              color: '#fff', fontSize: 14, marginBottom: 12, outline: 'none',
-            }}
+            className="w-full px-4 py-3.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white outline-none focus:border-blue-400 mb-3"
           />
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => setDeclining(false)} disabled={loading} style={{
-              flex: 1, padding: '14px 0', borderRadius: 14,
-              background: 'rgba(255,255,255,0.06)', color: '#fff',
-              border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: 14,
-            }}>
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => setDeclining(false)}
+              disabled={loading}
+              className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm hover:bg-gray-200 transition-colors"
+            >
               Quay lại
             </button>
-            <button onClick={() => handleDecline('declined')} disabled={loading} style={{
-              flex: 1, padding: '14px 0', borderRadius: 14,
-              background: '#b91c1c', color: '#fff',
-              border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: 14,
-            }}>
+            <button
+              onClick={() => handleDecline('declined')}
+              disabled={loading}
+              className="flex-1 py-3.5 rounded-xl bg-red-600 text-white font-extrabold text-sm hover:bg-red-700 transition-colors"
+            >
               Xác nhận
             </button>
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 300 }}>
+        <div className="flex gap-3 w-full max-w-[300px]">
           {/* Accept */}
           <button
             onClick={handleAccept}
             disabled={loading}
-            style={{
-              flex: 1, padding: '16px 0', borderRadius: 16, border: 'none',
-              cursor: loading ? 'default' : 'pointer',
-              background: loading ? '#14532d' : '#15803d',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-              boxShadow: loading ? 'none' : '0 0 24px rgba(21,128,61,0.45)',
-              transition: 'background 0.2s, box-shadow 0.2s',
-            }}
+            className="flex-1 flex flex-col items-center gap-1.5 py-4 rounded-2xl bg-green-600 hover:bg-green-700 disabled:bg-green-300 transition-colors shadow-lg shadow-green-200"
           >
-            <Check size={22} color="#fff" strokeWidth={3} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.05em' }}>
-              NHẬN NHIỆM VỤ
+            <Check size={22} className="text-white" strokeWidth={3} />
+            <span className="text-[11px] font-extrabold text-white tracking-wide uppercase">
+              Nhận nhiệm vụ
             </span>
           </button>
 
@@ -289,16 +229,11 @@ export default function IncomingCallOverlay() {
           <button
             onClick={() => setDeclining(true)}
             disabled={loading}
-            style={{
-              flex: 1, padding: '16px 0', borderRadius: 16,
-              cursor: loading ? 'default' : 'pointer',
-              background: 'rgba(185,28,28,0.25)', border: '1px solid rgba(185,28,28,0.4)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-            }}
+            className="flex-1 flex flex-col items-center gap-1.5 py-4 rounded-2xl border-2 border-red-200 bg-red-50 hover:bg-red-100 transition-colors"
           >
-            <X size={22} color="#f87171" strokeWidth={3} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#f87171', letterSpacing: '0.05em' }}>
-              TỪ CHỐI
+            <X size={22} className="text-red-500" strokeWidth={3} />
+            <span className="text-[11px] font-extrabold text-red-500 tracking-wide uppercase">
+              Từ chối
             </span>
           </button>
         </div>

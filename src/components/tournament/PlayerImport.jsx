@@ -401,8 +401,8 @@ export default function PlayerImport({
             </h3>
           </div>
 
-          <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="border border-gray-200 rounded-xl overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 w-10">#</th>
@@ -436,9 +436,9 @@ export default function PlayerImport({
       {/* ── Add manually ── */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Thêm thủ công</p>
-        <div className="flex gap-2 items-start flex-wrap">
+        <div className="grid gap-2">
           {requirePlayerCode && (
-            <div className="w-32">
+            <div>
               <input
                 placeholder="Mã số"
                 value={newCode}
@@ -451,37 +451,39 @@ export default function PlayerImport({
               {addErrors.code && <p className="text-xs text-red-600 mt-1">{addErrors.code}</p>}
             </div>
           )}
-          <div className="flex-1 min-w-36">
-            <input
-              placeholder={isDoubles ? 'VĐV1 / VĐV2' : 'Tên VĐV'}
-              value={newName}
-              onChange={e => { setNewName(e.target.value); setAddErrors(p => ({ ...p, name: null })) }}
-              onKeyDown={e => e.key === 'Enter' && addPlayer()}
-              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
-                addErrors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'
-              }`}
-            />
-            {addErrors.name && <p className="text-xs text-red-600 mt-1">{addErrors.name}</p>}
+          <div className="flex gap-2">
+            <div className="flex-1 min-w-0">
+              <input
+                placeholder={isDoubles ? 'VĐV1 / VĐV2' : 'Tên VĐV'}
+                value={newName}
+                onChange={e => { setNewName(e.target.value); setAddErrors(p => ({ ...p, name: null })) }}
+                onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
+                  addErrors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
+              />
+              {addErrors.name && <p className="text-xs text-red-600 mt-1">{addErrors.name}</p>}
+            </div>
+            <div className="flex-1 min-w-0">
+              <input
+                placeholder="Câu lạc bộ"
+                value={newClub}
+                onChange={e => { setNewClub(e.target.value); setAddErrors(p => ({ ...p, club: null })) }}
+                onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
+                  addErrors.club ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                }`}
+              />
+              {addErrors.club && <p className="text-xs text-red-600 mt-1">{addErrors.club}</p>}
+            </div>
+            <button
+              onClick={addPlayer}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Thêm</span>
+            </button>
           </div>
-          <div className="flex-1 min-w-36">
-            <input
-              placeholder="Câu lạc bộ"
-              value={newClub}
-              onChange={e => { setNewClub(e.target.value); setAddErrors(p => ({ ...p, club: null })) }}
-              onKeyDown={e => e.key === 'Enter' && addPlayer()}
-              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
-                addErrors.club ? 'border-red-300 bg-red-50' : 'border-gray-300'
-              }`}
-            />
-            {addErrors.club && <p className="text-xs text-red-600 mt-1">{addErrors.club}</p>}
-          </div>
-          <button
-            onClick={addPlayer}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            Thêm
-          </button>
         </div>
       </div>
 

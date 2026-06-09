@@ -260,7 +260,7 @@ export default function TournamentOverview() {
 
       {/* Completed banner */}
       {allDone && (
-        <div className="bg-linear-to-r from-yellow-400 to-orange-400 rounded-2xl px-6 py-4 mb-6 flex items-center justify-between gap-4">
+        <div className="bg-linear-to-r from-yellow-400 to-orange-400 rounded-2xl px-4 sm:px-6 py-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Trophy className="w-6 h-6 text-white shrink-0" />
             <div>
@@ -399,7 +399,7 @@ export default function TournamentOverview() {
               {tournament.regulations_url && (
                 <button
                   onClick={() => window.open(tournament.regulations_url, '_blank', 'noopener,noreferrer')}
-                  className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                  className="flex-1 w-full sm:min-w-[160px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
                 >
                   <FileText className="w-4 h-4 shrink-0" />
                   Xem Điều lệ giải đấu
@@ -409,7 +409,7 @@ export default function TournamentOverview() {
               {tournament.chat_qr_url && (
                 <button
                   onClick={() => setShowQrModal(true)}
-                  className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                  className="flex-1 w-full sm:min-w-[140px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
                 >
                   <QrCode className="w-4 h-4 shrink-0" />
                   QR nhóm chat
