@@ -107,6 +107,12 @@ export default function PlansPage() {
       <div className="text-center mb-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-3">{t('plans.title')}</h1>
         <p className="text-gray-500 max-w-xl mx-auto">{t('plans.subtitle')}</p>
+        <Link
+          to="/features"
+          className="inline-flex items-center gap-1.5 mt-4 text-sm text-green-600 hover:text-green-700 font-medium underline underline-offset-2"
+        >
+          Xem chi tiết tất cả tính năng theo gói →
+        </Link>
       </div>
 
       {/* Plans grid */}

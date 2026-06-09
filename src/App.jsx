@@ -48,6 +48,7 @@ import PlayerProfilePage          from '@/pages/PlayerProfilePage'
 import PublicBracketPage          from '@/pages/PublicBracketPage'
 import PrivacyPage                from '@/pages/PrivacyPage'
 import TermsPage                  from '@/pages/TermsPage'
+import FeaturesPage               from '@/pages/FeaturesPage'
 import ErrorBoundary              from '@/components/ErrorBoundary'
 import { PlanProvider }           from '@/lib/hooks/usePlan'
 import { LangProvider }           from '@/i18n'
@@ -238,8 +239,9 @@ function AppShell() {
               <Route path="/tournament/:id/event/:eventId/bracket" element={<PublicBracketPage />} />
 
               {/* ── Legal ── */}
-              <Route path="/privacy" element={<PrivacyPage />} />
-              <Route path="/terms"   element={<TermsPage />} />
+              <Route path="/privacy"  element={<PrivacyPage />} />
+              <Route path="/terms"    element={<TermsPage />} />
+              <Route path="/features" element={<FeaturesPage />} />
 
               {/* ── Umpire (fallback if umpire navigates via URL) ── */}
               {umpireRoutes}

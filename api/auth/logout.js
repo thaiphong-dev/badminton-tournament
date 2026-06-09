@@ -11,18 +11,29 @@ function parseCookies(str = '') {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
+  // CSRF validation
+  const csrfHeader = req.headers['x-csrf-token'] ?? ''
   const cookies = parseCookies(req.headers.cookie)
-  const token = cookies.bt_session
-
-  if (token) {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-    )
-    // Revoke session trên DB — fire-and-forget, không block response
-    supabase.rpc('logout_session', { p_token: token }).catch(() => {})
+  if (!csrfHeader || csrfHeader !== cookies.csrf_token) {
+    return res.status(403).json({ error: 'invalid_csrf' })
   }
 
-  res.setHeader('Set-Cookie', 'bt_session=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Strict')
+  // Revoke DB session — optional, never block the response
+  const token = cookies.bt_session
+  if (token) {
+    try {
+      const url = process.env.SUPABASE_URL
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+      if (url && key) {
+        const supabase = createClient(url, key)
+        await supabase.rpc('logout_session', { p_token: token })
+      }
+    } catch { /* ignore — cookie will be cleared anyway */ }
+  }
+
+  res.setHeader('Set-Cookie', [
+    'bt_session=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Strict',
+    'csrf_token=; Path=/; Secure; Max-Age=0; SameSite=Strict',
+  ])
   return res.status(200).json({ ok: true })
 }
