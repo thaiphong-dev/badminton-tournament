@@ -5,7 +5,6 @@ import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { isDoublesDiscipline } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils/cn'
-import { sendPush } from '@/lib/utils/sendPush'
 
 export default function RegistrationReview({ tournamentId, tournamentName = '' }) {
   const { t } = useI18n()
@@ -92,12 +91,6 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
           p_status:          'approved',
           p_tournament_name: tournamentName,
         })
-        sendPush(
-          reg.athlete_id,
-          t('reg.approvedPush'),
-          t('reg.approvedMsg', { name: tournamentName }),
-          '/athlete',
-        )
       }
       setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
     }
@@ -146,12 +139,6 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
           p_tournament_name: tournamentName,
           p_reject_reason:   reason || null,
         })
-        sendPush(
-          reg.athlete_id,
-          t('reg.rejectedPush'),
-          t('reg.rejectedMsg', { name: tournamentName }),
-          '/athlete',
-        )
       }
       setRegs(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected', note: reason } : r))
     }
