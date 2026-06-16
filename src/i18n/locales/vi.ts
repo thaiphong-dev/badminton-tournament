@@ -319,6 +319,7 @@ export default {
     subtitle:         'Cấu hình thể thức & luật thi đấu',
     savedOk:          'Đã lưu cấu hình thành công',
     saveError:        'Lỗi lưu cấu hình: {msg}',
+    invalidAgeLimit:  'Vui lòng nhập số tuổi giới hạn hợp lệ.',
     saveBtn:          'Lưu cấu hình',
     nextBtn:          'Tiếp theo: Import VĐV',
     section: {
@@ -357,6 +358,7 @@ export default {
       startTimeLabel:  'Giờ bắt đầu lượt 1 (tuỳ chọn)',
       durationLabel:   'Thời gian mỗi lượt (phút)',
       hint:            'Khi đã nhập giờ bắt đầu, bảng sân sẽ hiển thị giờ dự kiến cho từng lượt đấu.',
+      invalidStartTimeError: 'Giờ bắt đầu không được trước ngày bắt đầu giải đấu ({date})',
     },
     mode: {
       requireCode:     'Giải chuyên nghiệp — yêu cầu mã số VĐV',

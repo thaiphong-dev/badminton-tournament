@@ -3,7 +3,7 @@ import { X, Loader2, CheckCircle2, AlertCircle, Search, UserCheck } from 'lucide
 import { supabase } from '@/lib/supabase'
 import { sendPush } from '@/lib/utils/sendPush'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
-import { isDoublesDiscipline, isAgeEligible, AGE_CATEGORY_LABELS } from '@/lib/utils/eventHelpers'
+import { isDoublesDiscipline, isAgeEligible, getAgeCategoryLabel } from '@/lib/utils/eventHelpers'
 import { cn } from '@/lib/utils/cn'
 
 // ── Custom field renderer for athlete registration ─────────────────────────────
@@ -302,7 +302,7 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
                     const checked  = selected.has(e.id)
                     const doubles  = isDoublesDiscipline(e.discipline)
                     const ageLabel = e.age_category && e.age_category !== 'open'
-                      ? AGE_CATEGORY_LABELS[e.age_category]
+                      ? getAgeCategoryLabel(e.age_category)
                       : null
                     return (
                       <button

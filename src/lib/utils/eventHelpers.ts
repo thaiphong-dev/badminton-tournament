@@ -56,11 +56,58 @@ export const AGE_CATEGORY_LABELS = {
 }
 
 /**
+ * Formats a dynamic age category value to user-friendly label.
+ * e.g., 'u15' -> 'U15', 'u40plus' -> 'U40+'
+ */
+export function getAgeCategoryLabel(category) {
+  if (!category || category === 'open') return 'Mở'
+
+  const rangeMatch = category.match(/^u(\d+)to(\d+)$/i)
+  if (rangeMatch) {
+    return `${rangeMatch[1]}-${rangeMatch[2]}`
+  }
+
+  const plusMatch = category.match(/^u(\d+)plus$/i)
+  if (plusMatch) {
+    return `U${plusMatch[1]}+`
+  }
+
+  const uMatch = category.match(/^u(\d+)$/i)
+  if (uMatch) {
+    return `U${uMatch[1]}`
+  }
+
+  return AGE_CATEGORY_LABELS[category] || category
+}
+
+/**
  * Returns the birth-year hint string shown to users.
  * e.g. "sinh năm 2009 trở đi" for u17 in 2026.
  */
 export function ageCategoryHint(category) {
+  if (!category || category === 'open') return null
   const y = new Date().getFullYear()
+
+  const rangeMatch = category.match(/^u(\d+)to(\d+)$/i)
+  if (rangeMatch) {
+    const min = parseInt(rangeMatch[1], 10)
+    const max = parseInt(rangeMatch[2], 10)
+    return `sinh năm ${y - max} đến ${y - min} (từ ${min} đến ${max} tuổi)`
+  }
+
+  const plusMatch = category.match(/^u(\d+)plus$/i)
+  if (plusMatch) {
+    const limit = parseInt(plusMatch[1], 10)
+    return `sinh năm ${y - limit} trở về trước (≥ ${limit} tuổi)`
+  }
+
+  const uMatch = category.match(/^u(\d+)$/i)
+  if (uMatch) {
+    const limit = parseInt(uMatch[1], 10)
+    return `sinh năm ${y - limit} trở đi (≤ ${limit} tuổi)`
+  }
+
+  // Legacy/fallback
   if (category === 'u17')     return `sinh năm ${y - 17} trở đi`
   if (category === 'u19')     return `sinh năm ${y - 19} trở đi`
   if (category === 'u35plus') return `sinh năm ${y - 35} trở về trước`
@@ -81,6 +128,25 @@ export function isAgeEligible(dob, ageCategory) {
   const birthYear = new Date(dob).getFullYear()
   const thisYear  = new Date().getFullYear()
   const age       = thisYear - birthYear
+
+  const rangeMatch = ageCategory.match(/^u(\d+)to(\d+)$/i)
+  if (rangeMatch) {
+    const min = parseInt(rangeMatch[1], 10)
+    const max = parseInt(rangeMatch[2], 10)
+    return age >= min && age <= max
+  }
+
+  const plusMatch = ageCategory.match(/^u(\d+)plus$/i)
+  if (plusMatch) {
+    return age >= parseInt(plusMatch[1], 10)
+  }
+
+  const uMatch = ageCategory.match(/^u(\d+)$/i)
+  if (uMatch) {
+    return age <= parseInt(uMatch[1], 10)
+  }
+
+  // Legacy/fallback
   if (ageCategory === 'u17')     return age <= 17
   if (ageCategory === 'u19')     return age <= 19
   if (ageCategory === 'u35plus') return age >= 35

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FORMAT_OPTIONS, FORMAT_LABELS } from '@/lib/constants'
-import { isValidBracketSize, nextPowerOfTwo, AGE_CATEGORY_OPTIONS, ageCategoryHint } from '@/lib/utils/eventHelpers'
+import { isValidBracketSize, nextPowerOfTwo, ageCategoryHint } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -157,7 +157,7 @@ function CustomFieldRow({ field, onChange, onDelete }) {
 export default function EventSetup() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
 
   const [tournament, setTournament] = useState(null)
   const [event, setEvent]           = useState(null)
@@ -220,7 +220,7 @@ export default function EventSetup() {
     setLoading(true)
     try {
       const [tRes, eRes] = await Promise.all([
-        supabase.from('tournaments').select('id, name').eq('id', tournamentId).single(),
+        supabase.from('tournaments').select('id, name, start_date').eq('id', tournamentId).single(),
         supabase.from('events').select('*').eq('id', eventId).single(),
       ])
       if (tRes.error) throw tRes.error
@@ -242,6 +242,29 @@ export default function EventSetup() {
     setSaved(false)
     setError(null)
     try {
+      if (scheduleStartTime && tournament?.start_date) {
+        const startLimit = new Date(`${tournament.start_date}T00:00`)
+        const selectedTime = new Date(scheduleStartTime)
+        if (selectedTime < startLimit) {
+          const formattedDate = new Date(tournament.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'vi-VN')
+          throw new Error(t('eventSetup.scheduleSection.invalidStartTimeError', { date: formattedDate }) || `Giờ bắt đầu không được trước ngày bắt đầu giải đấu (${formattedDate})`)
+        }
+      }
+      if (ageCategory && ageCategory !== 'open') {
+        const isValid = /^u\d+$/i.test(ageCategory) || /^u\d+plus$/i.test(ageCategory) || /^u\d+to\d+$/i.test(ageCategory)
+        if (!isValid) {
+          throw new Error(t('eventSetup.invalidAgeLimit') || 'Vui lòng nhập số tuổi giới hạn hợp lệ.')
+        }
+
+        const rangeMatch = ageCategory.match(/^u(\d+)to(\d+)$/i)
+        if (rangeMatch) {
+          const minVal = parseInt(rangeMatch[1], 10)
+          const maxVal = parseInt(rangeMatch[2], 10)
+          if (minVal >= maxVal) {
+            throw new Error('Độ tuổi tối thiểu phải nhỏ hơn độ tuổi tối đa.')
+          }
+        }
+      }
       const scoringRules = {
         group_stage:      { sets: gsSet,  points_per_set: gsPts  },
         knockout_regular: { sets: regSet, points_per_set: regPts },
@@ -269,22 +292,51 @@ export default function EventSetup() {
         .eq('id', eventId)
       if (err) throw err
       setSaved(true)
+      return true
     } catch (err) {
       setError(t('eventSetup.saveError', { msg: err.message }))
+      return false
     } finally {
       setSaving(false)
     }
   }
 
   async function handleSaveAndNext() {
-    await handleSave()
-    navigate(`/tournament/${tournamentId}/event/${eventId}/players`)
+    const ok = await handleSave()
+    if (ok) {
+      navigate(`/tournament/${tournamentId}/event/${eventId}/players`)
+    }
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const totalQualify  = Number(numFirst) + Number(numSecond)
   const bracketOk     = format === 'knockout_only' || isValidBracketSize(Number(numFirst), Number(numSecond))
   const suggestedNext = bracketOk ? null : nextPowerOfTwo(totalQualify)
+
+  // Age restriction helper variables
+  let ageType = 'open'
+  let ageNum = ''
+  let ageMaxNum = ''
+  if (ageCategory && ageCategory !== 'open') {
+    const plusMatch = ageCategory.match(/^u(\d+)plus$/i)
+    if (plusMatch) {
+      ageType = 'over'
+      ageNum = plusMatch[1]
+    } else {
+      const rangeMatch = ageCategory.match(/^u(\d+)to(\d+)$/i)
+      if (rangeMatch) {
+        ageType = 'range'
+        ageNum = rangeMatch[1]
+        ageMaxNum = rangeMatch[2]
+      } else {
+        const uMatch = ageCategory.match(/^u(\d+)$/i)
+        if (uMatch) {
+          ageType = 'under'
+          ageNum = uMatch[1]
+        }
+      }
+    }
+  }
 
   if (loading) {
     return (
@@ -502,6 +554,7 @@ export default function EventSetup() {
                 <input
                   type="datetime-local"
                   value={scheduleStartTime}
+                  min={tournament?.start_date ? `${tournament.start_date}T00:00` : undefined}
                   onChange={e => { setScheduleStartTime(e.target.value); setSaved(false) }}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -586,16 +639,124 @@ export default function EventSetup() {
 
         {/* ── SECTION: Age restriction ── */}
         <Section icon={Info} title="Giới hạn độ tuổi">
-          <div className="space-y-2">
-            <select
-              value={ageCategory}
-              onChange={e => { setAgeCategory(e.target.value); setSaved(false) }}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {AGE_CATEGORY_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+          <div className="space-y-3">
+            <div className="flex gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { setAgeCategory('open'); setSaved(false) }}
+                className={cn(
+                  'px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all',
+                  ageType === 'open'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200',
+                )}
+              >
+                Không giới hạn (Mở)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAgeCategory(`u${ageNum || '17'}`); setSaved(false) }}
+                className={cn(
+                  'px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all',
+                  ageType === 'under'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200',
+                )}
+              >
+                Dưới hoặc bằng (U)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAgeCategory(`u${ageNum || '35'}plus`); setSaved(false) }}
+                className={cn(
+                  'px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all',
+                  ageType === 'over'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200',
+                )}
+              >
+                Trở lên (Tuổi+)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAgeCategory(`u${ageNum || '18'}to${ageMaxNum || '30'}`); setSaved(false) }}
+                className={cn(
+                  'px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all',
+                  ageType === 'range'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200',
+                )}
+              >
+                Trong khoảng (Từ - Đến)
+              </button>
+            </div>
+
+            {ageType === 'range' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600 font-medium">Độ tuổi giới hạn:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400">Từ</span>
+                  <input
+                    type="number"
+                    min="5"
+                    max="99"
+                    value={ageNum}
+                    onChange={e => {
+                      const num = e.target.value
+                      setAgeCategory(`u${num}to${ageMaxNum || '30'}`)
+                      setSaved(false)
+                    }}
+                    placeholder="18"
+                    className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  />
+                  <span className="text-xs text-gray-400">đến</span>
+                  <input
+                    type="number"
+                    min="5"
+                    max="99"
+                    value={ageMaxNum}
+                    onChange={e => {
+                      const num = e.target.value
+                      setAgeCategory(`u${ageNum || '18'}to${num}`)
+                      setSaved(false)
+                    }}
+                    placeholder="30"
+                    className="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  />
+                  <span className="text-sm text-gray-600">tuổi</span>
+                </div>
+              </div>
+            )}
+
+            {(ageType === 'under' || ageType === 'over') && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 font-medium">
+                  {ageType === 'under' ? 'Độ tuổi giới hạn (U):' : 'Độ tuổi tối thiểu:'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {ageType === 'under' && <span className="text-sm font-bold text-gray-500">U</span>}
+                  <input
+                    type="number"
+                    min="5"
+                    max="99"
+                    value={ageNum}
+                    onChange={e => {
+                      const num = e.target.value
+                      if (ageType === 'under') {
+                        setAgeCategory(num ? `u${num}` : 'open')
+                      } else if (ageType === 'over') {
+                        setAgeCategory(num ? `u${num}plus` : 'open')
+                      }
+                      setSaved(false)
+                    }}
+                    placeholder={ageType === 'under' ? '17' : '35'}
+                    className="w-20 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  />
+                  {ageType === 'over' && <span className="text-sm font-bold text-gray-500">+</span>}
+                </div>
+              </div>
+            )}
+
             {ageCategoryHint(ageCategory) && (
               <p className="text-xs text-gray-400">
                 VĐV đủ điều kiện: {ageCategoryHint(ageCategory)}

@@ -24,6 +24,16 @@ const STATUS_BADGE = {
   setup: 'yellow', group_stage: 'blue', knockout: 'purple', completed: 'green',
 }
 
+// Module-level caches for active fetches to prevent concurrent duplicate queries
+const activeGroupStageFetches = new Map<string, Promise<{
+  tournament: any
+  event: any
+  players: any[]
+  groups: any[]
+  matches: any[]
+}>>()
+const activeUmpireMapFetches = new Map<string, Promise<any>>()
+
 export default function GroupStagePage() {
   const { id, eventId } = useParams()   // eventId is undefined on legacy routes
   const navigate = useNavigate()
@@ -52,57 +62,98 @@ export default function GroupStagePage() {
   }, [id, eventId])
 
   async function fetchUmpireMap() {
-    const { data } = await supabase
+    if (!id) return
+    const activePromise = activeUmpireMapFetches.get(id)
+    if (activePromise) {
+      setUmpireMap(await activePromise)
+      return
+    }
+
+    const newPromise = supabase
       .from('tournament_umpires')
       .select('umpire_id, profiles!umpire_id(id, name, phone)')
       .eq('tournament_id', id)
-    const map = {}
-    for (const row of data || []) {
-      if (row.profiles) map[row.umpire_id] = row.profiles
-    }
-    setUmpireMap(map)
+      .then(({ data }) => {
+        const map = {}
+        for (const row of data || []) {
+          if (row.profiles) map[row.umpire_id] = row.profiles
+        }
+        return map
+      })
+      .finally(() => {
+        if (activeUmpireMapFetches.get(id) === newPromise) {
+          activeUmpireMapFetches.delete(id)
+        }
+      })
+
+    activeUmpireMapFetches.set(id, newPromise)
+    setUmpireMap(await newPromise)
   }
 
   // ── Data fetching ───────────────────────────────────────────────────────────
-  async function fetchAll() {
+  async function fetchAll(force = false) {
+    if (!id) return
     setLoading(true)
     setError(null)
+    const cacheKey = `${id}-${eventId || 'none'}`
     try {
-      // Always fetch tournament
-      const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
-      if (tRes.error) throw tRes.error
-      setTournament(tRes.data)
+      let fetchPromise = !force ? activeGroupStageFetches.get(cacheKey) : null
+      if (!fetchPromise) {
+        fetchPromise = (async () => {
+          // Always fetch tournament
+          const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
+          if (tRes.error) throw tRes.error
 
-      // Fetch event when in per-event route
-      let ev = null
-      if (eventId) {
-        const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
-        if (eRes.error) throw eRes.error
-        ev = eRes.data
-        setEvent(ev)
+          // Fetch event when in per-event route
+          let ev = null
+          if (eventId) {
+            const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
+            if (eRes.error) throw eRes.error
+            ev = eRes.data
+          }
+
+          // Scope players / groups / matches to event when available, else to tournament
+          const [pRes, gRes, mRes] = await Promise.all([
+            eventId
+              ? supabase.from('players').select('*').eq('event_id', eventId).order('name')
+              : supabase.from('players').select('*').eq('tournament_id', id).order('name'),
+            eventId
+              ? supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('event_id', eventId).order('group_number')
+              : supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('tournament_id', id).order('group_number'),
+            eventId
+              ? supabase.from('matches').select('*').eq('event_id', eventId).eq('stage', 'group').order('match_number')
+              : supabase.from('matches').select('*').eq('tournament_id', id).eq('stage', 'group').order('match_number'),
+          ])
+
+          if (pRes.error) throw pRes.error
+          if (gRes.error) throw gRes.error
+          if (mRes.error) throw mRes.error
+
+          return {
+            tournament: tRes.data,
+            event: ev,
+            players: pRes.data || [],
+            groups: gRes.data || [],
+            matches: mRes.data || [],
+          }
+        })().finally(() => {
+          if (activeGroupStageFetches.get(cacheKey) === fetchPromise) {
+            activeGroupStageFetches.delete(cacheKey)
+          }
+        })
+
+        if (!force) {
+          activeGroupStageFetches.set(cacheKey, fetchPromise)
+        }
       }
 
-      // Scope players / groups / matches to event when available, else to tournament
-      const [pRes, gRes, mRes] = await Promise.all([
-        eventId
-          ? supabase.from('players').select('*').eq('event_id', eventId).order('name')
-          : supabase.from('players').select('*').eq('tournament_id', id).order('name'),
-        eventId
-          ? supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('event_id', eventId).order('group_number')
-          : supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('tournament_id', id).order('group_number'),
-        eventId
-          ? supabase.from('matches').select('*').eq('event_id', eventId).eq('stage', 'group').order('match_number')
-          : supabase.from('matches').select('*').eq('tournament_id', id).eq('stage', 'group').order('match_number'),
-      ])
-
-      if (pRes.error) throw pRes.error
-      if (gRes.error) throw gRes.error
-      if (mRes.error) throw mRes.error
-
-      setPlayers(pRes.data || [])
-      setGroups(gRes.data || [])
-      setMatches(mRes.data || [])
-    } catch (err) {
+      const res = await fetchPromise
+      setTournament(res.tournament)
+      setEvent(res.event)
+      setPlayers(res.players)
+      setGroups(res.groups)
+      setMatches(res.matches)
+    } catch (err: any) {
       console.error(err)
       setError('Không thể tải dữ liệu.')
     } finally {

@@ -319,6 +319,7 @@ export default {
     subtitle:         'Configure format & scoring rules',
     savedOk:          'Configuration saved',
     saveError:        'Save error: {msg}',
+    invalidAgeLimit:  'Please enter a valid age limit.',
     saveBtn:          'Save',
     nextBtn:          'Next: Import Players',
     section: {
@@ -357,6 +358,7 @@ export default {
       startTimeLabel:  'Wave 1 start time (optional)',
       durationLabel:   'Wave duration (minutes)',
       hint:            'When set, the court board shows estimated times for each wave.',
+      invalidStartTimeError: 'Wave 1 start time cannot be before the tournament start date ({date})',
     },
     mode: {
       requireCode:     'Professional — require player ID code',

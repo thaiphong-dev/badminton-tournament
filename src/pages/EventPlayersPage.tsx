@@ -9,6 +9,14 @@ import PlayerImport from '@/components/tournament/PlayerImport'
 import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 
+// Module-level cache for active fetches to prevent concurrent duplicate queries
+const activeEventPlayersFetches = new Map<string, Promise<{
+  tournament: any
+  event: any
+  players: any[]
+  registrations: any[]
+}>>()
+
 export default function EventPlayersPage() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
@@ -22,27 +30,47 @@ export default function EventPlayersPage() {
   const [error, setError]             = useState(null)
   const [playerCount, setPlayerCount] = useState(0)
 
-  async function fetchData() {
+  async function fetchData(force = false) {
+    if (!eventId || !tournamentId) return
     setLoading(true)
     setError(null)
     try {
-      const [tRes, eRes, pRes, rRes] = await Promise.all([
-        supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
-        supabase.from('events').select('*').eq('id', eventId).single(),
-        supabase.from('players').select('*').eq('event_id', eventId).order('created_at'),
-        supabase.from('tournament_registrations')
-          .select('id, athlete_id, status, custom_field_values, profiles(name, club)')
-          .eq('event_id', eventId)
-          .order('created_at'),
-      ])
-      if (tRes.error) throw tRes.error
-      if (eRes.error) throw eRes.error
-      setTournament(tRes.data)
-      setEvent(eRes.data)
-      setPlayers(pRes.data || [])
-      setPlayerCount((pRes.data || []).length)
-      setRegs(rRes.data || [])
-    } catch (err) {
+      let fetchPromise = !force ? activeEventPlayersFetches.get(eventId) : null
+      if (!fetchPromise) {
+        fetchPromise = Promise.all([
+          supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
+          supabase.from('events').select('*').eq('id', eventId).single(),
+          supabase.from('players').select('*').eq('event_id', eventId).order('created_at'),
+          supabase.from('tournament_registrations')
+            .select('id, athlete_id, status, custom_field_values, profiles(name, club)')
+            .eq('event_id', eventId)
+            .order('created_at'),
+        ]).then(([tRes, eRes, pRes, rRes]) => {
+          if (tRes.error) throw tRes.error
+          if (eRes.error) throw eRes.error
+          return {
+            tournament: tRes.data,
+            event: eRes.data,
+            players: pRes.data || [],
+            registrations: rRes.data || [],
+          }
+        }).finally(() => {
+          if (activeEventPlayersFetches.get(eventId) === fetchPromise) {
+            activeEventPlayersFetches.delete(eventId)
+          }
+        })
+        if (!force) {
+          activeEventPlayersFetches.set(eventId, fetchPromise)
+        }
+      }
+
+      const res = await fetchPromise
+      setTournament(res.tournament)
+      setEvent(res.event)
+      setPlayers(res.players)
+      setPlayerCount(res.players.length)
+      setRegs(res.registrations)
+    } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)

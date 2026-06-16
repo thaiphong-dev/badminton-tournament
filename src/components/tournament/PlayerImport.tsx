@@ -127,27 +127,41 @@ export default function PlayerImport({
           const existingCodes = requirePlayerCode
             ? new Set(prev.map(p => p.player_code).filter(Boolean))
             : null
+          /* COMMENTED OUT: Duplicate names are allowed (same name is common)
           const existingNames = !requirePlayerCode
             ? new Set(prev.map(p => p.name.toLowerCase()))
             : null
+          */
 
           // Dedup nội bộ trong file (tránh import 2 dòng giống nhau từ cùng 1 file)
           const seenInFile = new Set()
           const dedupedParsed = parsed.filter(p => {
-            const key = requirePlayerCode ? p.player_code : p.name.toLowerCase()
+            if (requirePlayerCode) {
+              const key = p.player_code
+              if (!key || seenInFile.has(key)) return false
+              seenInFile.add(key)
+              return true
+            }
+            /* COMMENTED OUT: Same name in file is allowed
+            const key = p.name.toLowerCase()
             if (!key || seenInFile.has(key)) return false
             seenInFile.add(key)
+            */
             return true
           })
 
           const added = dedupedParsed.filter(p => {
             if (requirePlayerCode) return p.player_code && !existingCodes.has(p.player_code)
+            // Name duplicates are allowed:
+            return true
+            /* COMMENTED OUT:
             return !existingNames.has(p.name.toLowerCase())
+            */
           }).map(p => ({ ...p, _local: true, _key: crypto.randomUUID() }))
 
           const skipped = parsed.length - added.length
           if (skipped > 0) {
-            setParseError(`Đã bỏ qua ${skipped} VĐV vì ${requirePlayerCode ? 'mã số' : 'tên'} đã tồn tại hoặc trùng lặp trong file.`)
+            setParseError(`Đã bỏ qua ${skipped} VĐV vì mã số đã tồn tại hoặc trùng lặp trong file.`)
           }
           return [...prev, ...added]
         })
@@ -192,9 +206,11 @@ export default function PlayerImport({
     if (requirePlayerCode && code && players.some(p => p.player_code === code)) {
       errs.code = 'Mã số này đã có trong danh sách'
     }
+    /* COMMENTED OUT: Duplicate names are allowed (same name is common)
     if (!requirePlayerCode && name && players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
       errs.name = 'Tên này đã có trong danh sách'
     }
+    */
 
     if (Object.keys(errs).length > 0) { setAddErrors(errs); return }
 

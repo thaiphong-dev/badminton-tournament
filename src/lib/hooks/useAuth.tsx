@@ -66,62 +66,121 @@ function broadcastSignOut() {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+const g = typeof window !== 'undefined' ? (window as any) : {}
+
+// Use window/global properties to ensure singletons across chunk splits / HMR re-evaluations
+const state = {
+  get profile() { return g.__auth_profile ?? null },
+  set profile(val) { g.__auth_profile = val },
+  get verified() { return g.__auth_verified ?? false },
+  set verified(val) { g.__auth_verified = val },
+  get verifyFailed() { return g.__auth_verify_failed ?? false },
+  set verifyFailed(val) { g.__auth_verify_failed = val },
+  get activePromise() { return g.__auth_active_promise ?? null },
+  set activePromise(val) { g.__auth_active_promise = val },
+  get listeners() {
+    if (!g.__auth_listeners) {
+      g.__auth_listeners = new Set()
+    }
+    return g.__auth_listeners
+  }
+}
+
+// Initialize profile synchronously from localStorage in Dev
+if (typeof window !== 'undefined' && !state.verified && !state.activePromise) {
+  const s = localStorage.getItem(SESSION_KEY)
+  if (s) {
+    try {
+      const parsed = JSON.parse(s)
+      if (parsed?.profile && (!parsed.expiresAt || new Date(parsed.expiresAt) > new Date())) {
+        state.profile = parsed.profile
+      }
+    } catch { /* ignore */ }
+  }
+}
+
+function notifyListeners() {
+  state.listeners.forEach((listener: any) => listener())
+}
+
 export function useAuth() {
-  const initialProfile = IS_DEV ? (readSession()?.profile ?? null) : null
-  const [profile, setProfile]           = useState(initialProfile)
-  const [verified, setVerified]         = useState(false)
-  const [verifyFailed, setVerifyFailed] = useState(false)
+  const [, forceUpdate] = useState(0)
 
   useEffect(() => {
-    let cancelled = false
+    const listener = () => forceUpdate(n => n + 1)
+    state.listeners.add(listener)
+    return () => {
+      state.listeners.delete(listener)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state.verified || state.activePromise) return
 
     if (IS_DEV) {
-      // Dev: verify qua Supabase RPC trực tiếp
       const s = readSession()
-      if (!s?.token) { setVerified(true); return }
+      if (!s?.token) {
+        state.verified = true
+        notifyListeners()
+        return
+      }
 
-      supabase.rpc('verify_session', { p_token: s.token })
+      state.activePromise = supabase.rpc('verify_session', { p_token: s.token })
         .then(({ data }) => {
-          if (cancelled) return
-          if (!data?.[0]) { clearSession(); setProfile(null) }
-          else {
+          if (!data?.[0]) {
+            clearSession()
+            state.profile = null
+          } else {
             localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, profile: data[0] }))
-            setProfile(data[0])
+            state.profile = data[0]
           }
-          setVerified(true)
+          state.verified = true
+          notifyListeners()
         })
         .catch(() => {
-          if (cancelled) return
-          setVerifyFailed(true)
-          setVerified(true)
+          state.verifyFailed = true
+          state.verified = true
+          notifyListeners()
         })
     } else {
-      // Production: verify qua httpOnly cookie
-      fetch('/api/auth/me', { credentials: 'include' })
+      state.activePromise = fetch('/api/auth/me', { credentials: 'include' })
         .then(async res => {
-          if (cancelled) return
-          if (res.ok) { const { profile: p } = await res.json(); setProfile(p) }
-          else setProfile(null)
-          setVerified(true)
+          if (res.ok) {
+            const { profile: p } = await res.json()
+            state.profile = p
+          } else {
+            state.profile = null
+          }
+          state.verified = true
+          notifyListeners()
         })
         .catch(() => {
-          if (cancelled) return
-          setVerifyFailed(true)
-          setVerified(true)
+          state.verifyFailed = true
+          state.verified = true
+          notifyListeners()
         })
     }
-
-    return () => { cancelled = true }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cross-tab sync
   useEffect(() => {
     if (IS_DEV) {
-      function sync() { setProfile(readSession()?.profile ?? null) }
+      function sync() {
+        const p = readSession()?.profile ?? null
+        if (JSON.stringify(state.profile) !== JSON.stringify(p)) {
+          state.profile = p
+          notifyListeners()
+        }
+      }
       window.addEventListener('auth-change', sync)
       return () => window.removeEventListener('auth-change', sync)
     } else {
-      function onSignOut() { setProfile(null) }
+      function onSignOut() {
+        if (state.profile !== null) {
+          state.profile = null
+          notifyListeners()
+        }
+      }
       window.addEventListener('auth-signout', onSignOut)
       return () => window.removeEventListener('auth-signout', onSignOut)
     }
@@ -142,12 +201,14 @@ export function useAuth() {
           credentials: 'include',
           headers: { 'X-CSRF-Token': csrf },
         })
-      } catch { /* cookie sẽ expire tự nhiên */ }
+      } catch { /* ignore */ }
       broadcastSignOut()
     }
-    setProfile(null)
-    setVerified(true)
-    setVerifyFailed(false)
+    state.profile = null
+    state.verified = true
+    state.verifyFailed = false
+    state.activePromise = null
+    notifyListeners()
   }
 
   function updateProfileName(name) {
@@ -158,10 +219,13 @@ export function useAuth() {
         localStorage.setItem(SESSION_KEY, JSON.stringify(stored))
       }
     }
-    setProfile(prev => prev ? { ...prev, name } : prev)
+    if (state.profile) {
+      state.profile = { ...state.profile, name }
+    }
+    notifyListeners()
   }
 
-  return { profile, role: profile?.role ?? null, verified, verifyFailed, signOut, updateProfileName }
+  return { profile: state.profile, role: state.profile?.role ?? null, verified: state.verified, verifyFailed: state.verifyFailed, signOut, updateProfileName }
 }
 
 // ─── loginWithPhone ────────────────────────────────────────────────────────────

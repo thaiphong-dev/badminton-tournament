@@ -13,7 +13,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       strategies: 'injectManifest',
       srcDir: 'src',
-      filename: 'sw.js',
+      filename: 'sw.ts',
       devOptions: {
         enabled: true,   // enable SW in dev so push subscription works during testing
         type: 'module',

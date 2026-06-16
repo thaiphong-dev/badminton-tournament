@@ -27,7 +27,7 @@ function genderLabel(allowed) {
   if (allowed?.length === 1) return allowed[0] === 'male' ? 'Nam' : 'Nữ'
   return 'Nam hoặc Nữ'
 }
-import { isTournamentComplete, isAgeEligible, AGE_CATEGORY_LABELS } from '@/lib/utils/eventHelpers'
+import { isTournamentComplete, isAgeEligible, getAgeCategoryLabel } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -62,6 +62,17 @@ function eventCTAIcon(status) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+// Module-level caches for active fetches to prevent concurrent duplicate queries
+const activeOverviewPageFetches = new Map<string, Promise<{
+  tournament: any
+  events: any[]
+  matchStatsMap: Record<string, { total: number, completed: number }>
+  championMap: Record<string, string>
+}>>()
+const activePendingCountFetches = new Map<string, Promise<number>>()
+const activeMyRegFetches = new Map<string, Promise<Set<string>>>()
+const activeAthleteProfileFetches = new Map<string, Promise<{ gender: any, dob: any }>>()
+
 export default function TournamentOverview() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -70,8 +81,8 @@ export default function TournamentOverview() {
   const { t } = useI18n()
   const [tournament, setTournament]   = useState(null)
   const [events, setEvents]           = useState([])
-  const [matchStatsMap, setMatchStatsMap] = useState({})
-  const [championMap, setChampionMap] = useState({})
+  const [matchStatsMap, setMatchStatsMap] = useState<Record<string, { total: number, completed: number }>>({})
+  const [championMap, setChampionMap] = useState<Record<string, string>>({})
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -85,14 +96,14 @@ export default function TournamentOverview() {
   const [athleteDob,    setAthleteDob]    = useState(undefined) // undefined = not loaded yet
 
   useEffect(() => {
-    fetchData(true)
+    fetchData(true, false)
 
     const channel = supabase
       .channel(`tournament-overview-${id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'events', filter: `tournament_id=eq.${id}` },
-        () => fetchData(false)
+        () => fetchData(false, true)
       )
       .on(
         'postgres_changes',
@@ -105,79 +116,138 @@ export default function TournamentOverview() {
   }, [id])
 
   useEffect(() => {
-    supabase
-      .from('tournament_registrations')
-      .select('id', { count: 'exact', head: true })
-      .eq('tournament_id', id)
-      .eq('status', 'pending')
-      .then(({ count }) => setPendingCount(count ?? 0))
+    if (!id) return
+    let activePromise = activePendingCountFetches.get(id)
+    if (!activePromise) {
+      activePromise = Promise.resolve(supabase
+        .from('tournament_registrations')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_id', id)
+        .eq('status', 'pending')
+      )
+        .then(({ count }) => count ?? 0)
+        .finally(() => {
+          if (activePendingCountFetches.get(id) === activePromise) {
+            activePendingCountFetches.delete(id)
+          }
+        })
+      activePendingCountFetches.set(id, activePromise)
+    }
+    activePromise.then(count => setPendingCount(count))
   }, [id])
 
   useEffect(() => {
-    if (!profile?.id || profile.role !== 'athlete') return
-    supabase
-      .from('tournament_registrations')
-      .select('event_id')
-      .eq('tournament_id', id)
-      .eq('athlete_id', profile.id)
-      .then(({ data }) => setMyRegEventIds(new Set((data || []).map(r => r.event_id))))
-  }, [id, profile?.id])
+    if (!id || !profile?.id || profile.role !== 'athlete') return
+    const cacheKey = `${id}-${profile.id}`
+    let activePromise = activeMyRegFetches.get(cacheKey)
+    if (!activePromise) {
+      activePromise = Promise.resolve(supabase
+        .from('tournament_registrations')
+        .select('event_id')
+        .eq('tournament_id', id)
+        .eq('athlete_id', profile.id)
+      )
+        .then(({ data }) => new Set((data || []).map(r => r.event_id)))
+        .finally(() => {
+          if (activeMyRegFetches.get(cacheKey) === activePromise) {
+            activeMyRegFetches.delete(cacheKey)
+          }
+        })
+      activeMyRegFetches.set(cacheKey, activePromise)
+    }
+    activePromise.then(set => setMyRegEventIds(set))
+  }, [id, profile?.id, profile?.role])
 
   useEffect(() => {
     if (!profile?.id || profile.role !== 'athlete') return
-    supabase
-      .from('profiles')
-      .select('gender, date_of_birth')
-      .eq('id', profile.id)
-      .single()
-      .then(({ data }) => {
-        setAthleteGender(data?.gender ?? null)
-        setAthleteDob(data?.date_of_birth ?? null)
-      })
+    const key = profile.id
+    let activePromise = activeAthleteProfileFetches.get(key)
+    if (!activePromise) {
+      activePromise = Promise.resolve(supabase
+        .from('profiles')
+        .select('gender, date_of_birth')
+        .eq('id', profile.id)
+        .single()
+      )
+        .then(({ data }) => ({
+          gender: data?.gender ?? null,
+          dob: data?.date_of_birth ?? null,
+        }))
+        .finally(() => {
+          if (activeAthleteProfileFetches.get(key) === activePromise) {
+            activeAthleteProfileFetches.delete(key)
+          }
+        })
+      activeAthleteProfileFetches.set(key, activePromise)
+    }
+    activePromise.then(res => {
+      setAthleteGender(res.gender)
+      setAthleteDob(res.dob)
+    })
   }, [profile?.id, profile?.role])
 
-  async function fetchData(showLoading = true) {
+  async function fetchData(showLoading = true, force = false) {
+    if (!id) return
     if (showLoading) setLoading(true)
     setError(null)
     try {
-      const [tRes, eRes, mRes] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('id', id).single(),
-        supabase.from('events').select('*').eq('tournament_id', id).order('sort_order'),
-        supabase.from('matches').select('event_id, status, stage, winner_id').eq('tournament_id', id),
-      ])
-      if (tRes.error) throw tRes.error
-      if (eRes.error) throw eRes.error
+      let fetchPromise = !force ? activeOverviewPageFetches.get(id) : null
+      if (!fetchPromise) {
+        fetchPromise = (async () => {
+          const [tRes, eRes, mRes] = await Promise.all([
+            supabase.from('tournaments').select('*').eq('id', id).single(),
+            supabase.from('events').select('*').eq('tournament_id', id).order('sort_order'),
+            supabase.from('matches').select('event_id, status, stage, winner_id').eq('tournament_id', id),
+          ])
+          if (tRes.error) throw tRes.error
+          if (eRes.error) throw eRes.error
 
-      setTournament(tRes.data)
-      setEvents(eRes.data || [])
+          const stats: Record<string, { total: number, completed: number }> = {}
+          const finalWinners: Record<string, string> = {}
+          for (const m of mRes.data || []) {
+            if (!m.event_id) continue
+            if (!stats[m.event_id]) stats[m.event_id] = { total: 0, completed: 0 }
+            stats[m.event_id].total++
+            if (m.status === 'completed') stats[m.event_id].completed++
+            if (m.stage === 'final' && m.status === 'completed' && m.winner_id) {
+              finalWinners[m.event_id] = m.winner_id
+            }
+          }
 
-      const stats = {}
-      const finalWinners = {}
-      for (const m of mRes.data || []) {
-        if (!m.event_id) continue
-        if (!stats[m.event_id]) stats[m.event_id] = { total: 0, completed: 0 }
-        stats[m.event_id].total++
-        if (m.status === 'completed') stats[m.event_id].completed++
-        if (m.stage === 'final' && m.status === 'completed' && m.winner_id) {
-          finalWinners[m.event_id] = m.winner_id
+          let championMapData: Record<string, string> = {}
+          const winnerIds = [...new Set(Object.values(finalWinners))]
+          if (winnerIds.length > 0) {
+            const { data: players } = await supabase
+              .from('players').select('id, name').in('id', winnerIds)
+            const playerMap = Object.fromEntries((players || []).map(p => [p.id, p.name]))
+            championMapData = Object.fromEntries(
+              Object.entries(finalWinners).map(([evId, pId]) => [evId, playerMap[pId] ?? null])
+            )
+          }
+
+          return {
+            tournament: tRes.data,
+            events: eRes.data || [],
+            matchStatsMap: stats,
+            championMap: championMapData,
+          }
+        })().finally(() => {
+          if (activeOverviewPageFetches.get(id) === fetchPromise) {
+            activeOverviewPageFetches.delete(id)
+          }
+        })
+
+        if (!force) {
+          activeOverviewPageFetches.set(id, fetchPromise)
         }
       }
-      setMatchStatsMap(stats)
 
-      const winnerIds = [...new Set(Object.values(finalWinners))]
-      if (winnerIds.length > 0) {
-        const { data: players } = await supabase
-          .from('players').select('id, name').in('id', winnerIds)
-        const playerMap = Object.fromEntries((players || []).map(p => [p.id, p.name]))
-        setChampionMap(
-          Object.fromEntries(
-            Object.entries(finalWinners).map(([evId, pId]) => [evId, playerMap[pId] ?? null])
-          )
-        )
-      } else {
-        setChampionMap({})
-      }
-    } catch (err) {
+      const res = await fetchPromise
+      setTournament(res.tournament)
+      setEvents(res.events)
+      setMatchStatsMap(res.matchStatsMap)
+      setChampionMap(res.championMap)
+    } catch (err: any) {
       setError(err.message)
     } finally {
       if (showLoading) setLoading(false)
@@ -455,7 +525,7 @@ export default function TournamentOverview() {
                 && allowedGenders && !allowedGenders.includes(athleteGender)
               const ageBlocked     = !isAgeEligible(athleteDob ?? null, ev.age_category)
               const ageLabel       = ev.age_category && ev.age_category !== 'open'
-                ? AGE_CATEGORY_LABELS[ev.age_category] : null
+                ? getAgeCategoryLabel(ev.age_category) : null
               return (
                 <div key={ev.id} className="flex items-center justify-between py-1">
                   <span className="text-sm text-gray-700 flex items-center gap-1.5">

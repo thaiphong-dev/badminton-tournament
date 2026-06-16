@@ -13,6 +13,13 @@ import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
 
+// Module-level cache for active fetches to prevent concurrent duplicate queries
+const activeAttendancePageFetches = new Map<string, Promise<{
+  tournament: any
+  event: any
+  players: any[]
+}>>()
+
 export default function AttendancePage() {
   const { id: tournamentId, eventId } = useParams()
   const navigate = useNavigate()
@@ -26,27 +33,45 @@ export default function AttendancePage() {
   const [error, setError]           = useState(null)
   const [search, setSearch]         = useState('')
 
-  async function fetchData() {
+  async function fetchData(force = false) {
+    if (!eventId || !tournamentId) return
     setLoading(true)
     setError(null)
     try {
-      const [tRes, eRes, pRes] = await Promise.all([
-        supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
-        supabase.from('events').select('*').eq('id', eventId).single(),
-        supabase.from('players').select('*').eq('event_id', eventId).order('seed').order('name'),
-      ])
-      if (tRes.error) throw tRes.error
-      if (eRes.error) throw eRes.error
+      let fetchPromise = !force ? activeAttendancePageFetches.get(eventId) : null
+      if (!fetchPromise) {
+        fetchPromise = Promise.all([
+          supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
+          supabase.from('events').select('*').eq('id', eventId).single(),
+          supabase.from('players').select('*').eq('event_id', eventId).order('seed').order('name'),
+        ]).then(([tRes, eRes, pRes]) => {
+          if (tRes.error) throw tRes.error
+          if (eRes.error) throw eRes.error
+          return {
+            tournament: tRes.data,
+            event: eRes.data,
+            players: pRes.data || [],
+          }
+        }).finally(() => {
+          if (activeAttendancePageFetches.get(eventId) === fetchPromise) {
+            activeAttendancePageFetches.delete(eventId)
+          }
+        })
+        if (!force) {
+          activeAttendancePageFetches.set(eventId, fetchPromise)
+        }
+      }
 
-      setTournament(tRes.data)
-      const ev = eRes.data
+      const res = await fetchPromise
+      setTournament(res.tournament)
+      const ev = res.event
       setEvent(ev)
-      setPlayers(pRes.data || [])
+      setPlayers(res.players)
 
       if (!ev.attendance_enabled) {
         navigate(`/tournament/${tournamentId}/event/${eventId}/setup`, { replace: true })
       }
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)

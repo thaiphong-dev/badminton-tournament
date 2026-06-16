@@ -41,6 +41,16 @@ const STATUS_BADGE = {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+// Module-level caches for active fetches to prevent concurrent duplicate queries
+const activeKnockoutPageFetches = new Map<string, Promise<{
+  tournament: any
+  event: any
+  players: any[]
+  matches: any[]
+  pendingSetup: boolean
+}>>()
+const activeUmpireMapFetches = new Map<string, Promise<any>>()
+
 export default function KnockoutPage() {
   const { id, eventId } = useParams()
   const { profile } = useAuth()
@@ -112,102 +122,150 @@ export default function KnockoutPage() {
   useBTCRealtime(activeStage !== 'courts' ? id : null, handleRealtimeMatchUpdate)
 
   async function fetchUmpireMap() {
-    const { data } = await supabase
+    if (!id) return
+    const activePromise = activeUmpireMapFetches.get(id)
+    if (activePromise) {
+      setUmpireMap(await activePromise)
+      return
+    }
+
+    const newPromise = supabase
       .from('tournament_umpires')
       .select('umpire_id, profiles!umpire_id(id, name, phone)')
       .eq('tournament_id', id)
-    const map = {}
-    for (const row of data || []) {
-      if (row.profiles) map[row.umpire_id] = row.profiles
-    }
-    setUmpireMap(map)
+      .then(({ data }) => {
+        const map = {}
+        for (const row of data || []) {
+          if (row.profiles) map[row.umpire_id] = row.profiles
+        }
+        return map
+      })
+      .finally(() => {
+        if (activeUmpireMapFetches.get(id) === newPromise) {
+          activeUmpireMapFetches.delete(id)
+        }
+      })
+
+    activeUmpireMapFetches.set(id, newPromise)
+    setUmpireMap(await newPromise)
   }
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
-  async function fetchAll() {
+  async function fetchAll(force = false) {
+    if (!id) return
     setLoading(true)
     setError(null)
+    const cacheKey = `${id}-${eventId || 'none'}`
     try {
-      const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
-      if (tRes.error) throw tRes.error
-      setTournament(tRes.data)
+      let fetchPromise = !force ? activeKnockoutPageFetches.get(cacheKey) : null
+      if (!fetchPromise) {
+        fetchPromise = (async () => {
+          const tRes = await supabase.from('tournaments').select('*').eq('id', id).single()
+          if (tRes.error) throw tRes.error
 
-      // Fetch event when in per-event route
-      let ev = null
-      if (eventId) {
-        const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
-        if (eRes.error) throw eRes.error
-        ev = eRes.data
-        setEvent(ev)
-      }
-
-      const [pRes, mRes] = await Promise.all([
-        eventId
-          ? supabase.from('players').select('*').eq('event_id', eventId)
-          : supabase.from('players').select('*').eq('tournament_id', id),
-        eventId
-          ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
-          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number'),
-      ])
-
-      if (pRes.error) throw pRes.error
-      if (mRes.error) throw mRes.error
-
-      setPlayers(pRes.data || [])
-
-      let knockoutMatches = mRes.data || []
-
-      // ── Deduplicate: keep one match per (stage, match_number) ────────────────
-      const deduped      = deduplicateMatches(knockoutMatches)
-      const keptIds      = new Set(deduped.map(m => m.id))
-      const duplicateIds = knockoutMatches.filter(m => !keptIds.has(m.id)).map(m => m.id)
-      if (duplicateIds.length > 0 && profile?.id && tRes.data.creator_id === profile.id) {
-        await supabase.rpc('delete_duplicate_matches', {
-          p_creator_id:    profile.id,
-          p_tournament_id: id,
-          p_match_ids:     duplicateIds,
-        })
-        knockoutMatches = deduped
-      } else if (duplicateIds.length > 0) {
-        knockoutMatches = deduped
-      }
-
-      if (knockoutMatches.length === 0) {
-        const format = ev?.format ?? 'group_then_knockout'
-        if (format === 'knockout_only' && (pRes.data || []).length > 0) {
-          // Let user choose: auto-generate or lottery draw
-          setPendingSetup(true)
-        } else {
-          await generateBracket(tRes.data, pRes.data || [], ev)
-        }
-      } else {
-        await repairBracketLinks(knockoutMatches, id, eventId ?? null)
-
-        // Re-fetch after repair
-        const refetchQ = eventId
-          ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
-          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
-        const { data: repaired } = await refetchQ
-        const repairedMatches = repaired || knockoutMatches
-        setMatches(repairedMatches)
-
-        // Belt-and-suspenders: fix completion status if missed
-        const finalDone = repairedMatches.find(m => m.stage === 'final' && m.status === 'completed')
-        if (finalDone) {
-          if (eventId && ev?.status === 'knockout') {
-            const { data: fixedEv } = await supabase
-              .from('events').update({ status: 'completed' }).eq('id', eventId).select().single()
-            if (fixedEv) setEvent(fixedEv)
-          } else if (!eventId && tRes.data?.status === 'knockout') {
-            const { data: fixed } = await supabase
-              .from('tournaments')
-              .update({ status: 'completed', completed_at: new Date().toISOString() })
-              .eq('id', id).select().single()
-            if (fixed) setTournament(fixed)
+          // Fetch event when in per-event route
+          let ev = null
+          if (eventId) {
+            const eRes = await supabase.from('events').select('*').eq('id', eventId).single()
+            if (eRes.error) throw eRes.error
+            ev = eRes.data
           }
+
+          const [pRes, mRes] = await Promise.all([
+            eventId
+              ? supabase.from('players').select('*').eq('event_id', eventId)
+              : supabase.from('players').select('*').eq('tournament_id', id),
+            eventId
+              ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+              : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number'),
+          ])
+
+          if (pRes.error) throw pRes.error
+          if (mRes.error) throw mRes.error
+
+          let knockoutMatches = mRes.data || []
+          let eventObj = ev
+          let tournamentObj = tRes.data
+          let pendingSetupVal = false
+
+          // ── Deduplicate: keep one match per (stage, match_number) ────────────────
+          const deduped      = deduplicateMatches(knockoutMatches)
+          const keptIds      = new Set(deduped.map(m => m.id))
+          const duplicateIds = knockoutMatches.filter(m => !keptIds.has(m.id)).map(m => m.id)
+          if (duplicateIds.length > 0 && profile?.id && tRes.data.creator_id === profile.id) {
+            await supabase.rpc('delete_duplicate_matches', {
+              p_creator_id:    profile.id,
+              p_tournament_id: id,
+              p_match_ids:     duplicateIds,
+            })
+            knockoutMatches = deduped
+          } else if (duplicateIds.length > 0) {
+            knockoutMatches = deduped
+          }
+
+          if (knockoutMatches.length === 0) {
+            const format = ev?.format ?? 'group_then_knockout'
+            if (format === 'knockout_only' && (pRes.data || []).length > 0) {
+              // Let user choose: auto-generate or lottery draw
+              pendingSetupVal = true
+            }
+          } else {
+            await repairBracketLinks(knockoutMatches, id, eventId ?? null)
+
+            // Re-fetch after repair
+            const refetchQ = eventId
+              ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
+              : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
+            const { data: repaired } = await refetchQ
+            knockoutMatches = repaired || knockoutMatches
+
+            // Belt-and-suspenders: fix completion status if missed
+            const finalDone = knockoutMatches.find(m => m.stage === 'final' && m.status === 'completed')
+            if (finalDone) {
+              if (eventId && ev?.status === 'knockout') {
+                const { data: fixedEv } = await supabase
+                  .from('events').update({ status: 'completed' }).eq('id', eventId).select().single()
+                if (fixedEv) eventObj = fixedEv
+              } else if (!eventId && tRes.data?.status === 'knockout') {
+                const { data: fixed } = await supabase
+                  .from('tournaments')
+                  .update({ status: 'completed', completed_at: new Date().toISOString() })
+                  .eq('id', id).select().single()
+                if (fixed) tournamentObj = fixed
+              }
+            }
+          }
+
+          return {
+            tournament: tournamentObj,
+            event: eventObj,
+            players: pRes.data || [],
+            matches: knockoutMatches,
+            pendingSetup: pendingSetupVal,
+          }
+        })().finally(() => {
+          if (activeKnockoutPageFetches.get(cacheKey) === fetchPromise) {
+            activeKnockoutPageFetches.delete(cacheKey)
+          }
+        })
+
+        if (!force) {
+          activeKnockoutPageFetches.set(cacheKey, fetchPromise)
         }
       }
-    } catch (err) {
+
+      const res = await fetchPromise
+      setTournament(res.tournament)
+      setEvent(res.event)
+      setPlayers(res.players)
+      setMatches(res.matches)
+      setPendingSetup(res.pendingSetup)
+
+      // Post-fetch check: if no matches and format is not knockout_only, auto-generate bracket
+      if (res.matches.length === 0 && !res.pendingSetup) {
+        await generateBracket(res.tournament, res.players, res.event)
+      }
+    } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
