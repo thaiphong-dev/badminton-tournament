@@ -267,6 +267,9 @@ export async function loginWithPhone(phone, password) {
     throw new Error(body.error ?? 'Đã có lỗi xảy ra. Vui lòng thử lại.')
   }
   const { profile } = await res.json()
+  state.profile = profile
+  state.verified = true
+  notifyListeners()
   return profile
 }
 
