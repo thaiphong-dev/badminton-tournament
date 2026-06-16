@@ -1,3 +1,4 @@
+import React from 'react'
 import { cn } from '@/lib/utils/cn'
 
 const variants = {
@@ -10,7 +11,13 @@ const variants = {
   orange: 'bg-orange-100 text-orange-700',
 }
 
-export default function Badge({ children, variant = 'default', className }) {
+interface BadgeProps {
+  children: React.ReactNode
+  variant?: keyof typeof variants
+  className?: string
+}
+
+export default function Badge({ children, variant = 'default', className }: BadgeProps) {
   return (
     <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', variants[variant], className)}>
       {children}

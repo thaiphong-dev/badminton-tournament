@@ -160,7 +160,13 @@ export default function NotificationBell({ userId, role }) {
           showToast(n.title ?? 'Có vận động viên mới đăng ký.', 'info')
         }
       })
-      .subscribe()
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[NotificationBell] Realtime subscription failed. Make sure Realtime is enabled for user_notifications table in Supabase.', err)
+        } else {
+          console.log('[NotificationBell] Realtime subscription status:', status)
+        }
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [userId])

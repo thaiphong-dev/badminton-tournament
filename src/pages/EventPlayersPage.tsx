@@ -177,6 +177,7 @@ export default function EventPlayersPage() {
             eventId={eventId}
             discipline={event.discipline}
             existingPlayers={players}
+            maxTeams={event.max_teams}
             requirePlayerCode={event.require_player_code ?? false}
             onImportComplete={handleImportComplete}
           />

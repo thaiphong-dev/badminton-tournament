@@ -24,9 +24,10 @@ import { sanitizeAndTrim } from '@/lib/utils/sanitize'
  */
 export default function PlayerImport({
   tournamentId,
-  eventId,
-  discipline,
+  eventId = null,
+  discipline = '',
   existingPlayers = [],
+  maxTeams = null,
   requirePlayerCode = false,
   onImportComplete,
 }) {
@@ -44,6 +45,8 @@ export default function PlayerImport({
   const [parseError, setParseError]     = useState(null)
   const [importing, setImporting]       = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
+  const [limitWarning, setLimitWarning] = useState(null)
+  const [showConfirmSave, setShowConfirmSave] = useState(false)
 
   // ── File parsing ────────────────────────────────────────────────────────────
   const onDrop = useCallback((acceptedFiles) => {
@@ -171,7 +174,7 @@ export default function PlayerImport({
     }
 
     reader.readAsArrayBuffer(file)
-  }, [requirePlayerCode, isDoubles])
+  }, [requirePlayerCode, isDoubles, maxTeams])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -223,15 +226,15 @@ export default function PlayerImport({
   }
 
   // ── Validation ─────────────────────────────────────────────────────────────
-  function validate() {
-    const empty = players.find(p => !p.name.trim() || !p.club.trim())
+  function validatePlayers(list) {
+    const empty = list.find(p => !p.name.trim() || !p.club.trim())
     if (empty) return 'Có dòng thiếu Tên hoặc CLB.'
 
     if (requirePlayerCode) {
-      const missingCode = players.find(p => !p.player_code?.trim())
+      const missingCode = list.find(p => !p.player_code?.trim())
       if (missingCode) return `VĐV "${missingCode.name}" chưa có mã số. Giải chuyên nghiệp yêu cầu mã số cho tất cả VĐV.`
 
-      const codes = players.map(p => p.player_code?.trim())
+      const codes = list.map(p => p.player_code?.trim())
       const dupeCodes = codes.filter((c, i) => c && codes.indexOf(c) !== i)
       if (dupeCodes.length > 0) return `Mã số bị trùng: ${[...new Set(dupeCodes)].join(', ')}`
     }
@@ -240,14 +243,34 @@ export default function PlayerImport({
   }
 
   // ── Import to Supabase ──────────────────────────────────────────────────────
-  async function handleImport() {
-    const err = validate()
-    if (err) { setGlobalError(err); return }
+  async function handleImport(force = false) {
+    const totalCount = players.length
+    const hasExceeded = maxTeams !== null && totalCount > maxTeams
+
+    if (hasExceeded && !force) {
+      setShowConfirmSave(true)
+      return
+    }
+
+    const playersToSave = hasExceeded ? players.slice(0, maxTeams) : players
+
+    const err = validatePlayers(playersToSave)
+    if (err) {
+      setGlobalError(err)
+      return
+    }
     setGlobalError(null)
 
-    const newOnes = players.filter(p => p._local)
+    const newOnes = playersToSave.filter(p => p._local)
     if (newOnes.length === 0) {
-      setGlobalError('Không có VĐV mới để import.')
+      if (hasExceeded) {
+        setPlayers(playersToSave)
+        onImportComplete?.(playersToSave.length)
+        setImportSuccess(true)
+        setShowConfirmSave(false)
+      } else {
+        setGlobalError('Không có VĐV mới để import.')
+      }
       return
     }
 
@@ -278,9 +301,10 @@ export default function PlayerImport({
       )
       if (error) throw error
 
-      setPlayers(prev => prev.map(p => ({ ...p, _local: false })))
+      setPlayers(playersToSave.map(p => ({ ...p, _local: false })))
       setImportSuccess(true)
-      onImportComplete?.(players.length)
+      onImportComplete?.(playersToSave.length)
+      setShowConfirmSave(false)
     } catch (err) {
       if (err.code === '23505') {
         setGlobalError(
@@ -439,6 +463,7 @@ export default function PlayerImport({
                     player={player}
                     index={idx + 1}
                     showCode={requirePlayerCode}
+                    isOverLimit={maxTeams !== null && (idx + 1) > maxTeams}
                     onChange={updatePlayer}
                     onDelete={deletePlayer}
                   />
@@ -534,19 +559,84 @@ export default function PlayerImport({
           {importing ? 'Đang lưu...' : `Lưu ${newCount} VĐV mới vào giải đấu`}
         </Button>
       )}
+
+      {/* Warning capacity limit modal */}
+      {limitWarning && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all p-6">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-gray-900">{limitWarning.title}</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              {limitWarning.message}
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setLimitWarning(null)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Đồng ý
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save confirmation modal */}
+      {showConfirmSave && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-gray-900">Xác nhận loại bỏ VĐV vượt giới hạn</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Danh sách hiện có <strong>{players.length}</strong> {isDoubles ? 'đôi' : 'VĐV'}, vượt quá giới hạn tối đa cho phép của nội dung này (<strong>{maxTeams}</strong> {isDoubles ? 'đôi' : 'VĐV'}). 
+              <br /><br />
+              Khi lưu, các vận động viên vượt giới hạn (từ số thứ tự <strong>{maxTeams + 1}</strong> trở đi) sẽ bị tự động loại bỏ khỏi danh sách. Bạn có đồng ý tiếp tục?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmSave(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => handleImport(true)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Xác nhận lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── PlayerRow ────────────────────────────────────────────────────────────────
 
-function PlayerRow({ player, index, showCode, onChange, onDelete }) {
+function PlayerRow({ player, index, showCode, isOverLimit = false, onChange, onDelete }) {
   const [editing, setEditing] = useState(false)
   const key = player._key
 
   return (
-    <tr className={`group hover:bg-gray-50 transition-colors ${player._local ? 'bg-blue-50/30' : ''}`}>
-      <td className="px-4 py-2 text-xs text-gray-400">{index}</td>
+    <tr className={`group transition-colors ${
+      isOverLimit
+        ? 'bg-red-50/40 hover:bg-red-100/60 text-red-900 border-red-100'
+        : player._local ? 'bg-blue-50/30 hover:bg-blue-50/50' : 'hover:bg-gray-50'
+    }`}>
+      <td className="px-4 py-2 text-xs text-gray-400">
+        {index}
+        {isOverLimit && (
+          <span className="block text-[9px] text-red-500 font-semibold uppercase tracking-wide mt-0.5">
+            Vượt
+          </span>
+        )}
+      </td>
 
       {showCode && (
         <td className="px-4 py-2">
@@ -558,7 +648,7 @@ function PlayerRow({ player, index, showCode, onChange, onDelete }) {
               placeholder="Mã số"
             />
           ) : (
-            <span className={`text-sm font-mono ${player.player_code ? 'text-gray-700' : 'text-red-400 italic'}`}>
+            <span className={`text-sm font-mono ${player.player_code ? (isOverLimit ? 'text-red-700' : 'text-gray-700') : 'text-red-400 italic'}`}>
               {player.player_code ?? '— chưa có —'}
             </span>
           )}
@@ -574,7 +664,14 @@ function PlayerRow({ player, index, showCode, onChange, onDelete }) {
             className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         ) : (
-          <span className="text-sm text-gray-900 font-medium">{player.name}</span>
+          <div className="flex items-center gap-2">
+            <span className={`text-sm font-medium ${isOverLimit ? 'text-red-700' : 'text-gray-900'}`}>{player.name}</span>
+            {isOverLimit && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 shrink-0">
+                Vượt giới hạn
+              </span>
+            )}
+          </div>
         )}
       </td>
 
@@ -587,7 +684,7 @@ function PlayerRow({ player, index, showCode, onChange, onDelete }) {
             className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         ) : (
-          <span className="text-sm text-gray-500">{player.club}</span>
+          <span className={`text-sm ${isOverLimit ? 'text-red-600/80' : 'text-gray-500'}`}>{player.club}</span>
         )}
       </td>
 

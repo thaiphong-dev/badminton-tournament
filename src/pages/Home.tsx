@@ -110,7 +110,7 @@ export default function Home() {
 
       // Unified filter
       switch (activeFilter) {
-        case 'setup':     query = query.eq('status', 'setup'); break
+        case 'setup':     query = query.eq('status', 'setup').neq('registration_open', true); break
         case 'open':      query = query.eq('registration_open', true); break
         case 'active':    query = query.in('status', ['group_stage', 'knockout']); break
         case 'completed': query = query.eq('status', 'completed'); break
@@ -373,15 +373,16 @@ function TournamentCard({ tournament: trn, isPublic, t, lang }) {
           <Trophy className="w-5 h-5 text-blue-600" />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {trn.registration_open && (
+          {trn.registration_open ? (
             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
               {t('home.openRegistration')}
             </span>
+          ) : (
+            <Badge variant={STATUS_BADGE_VARIANT[trn.status] || 'default'}>
+              {t('status.' + trn.status) || trn.status}
+            </Badge>
           )}
-          <Badge variant={STATUS_BADGE_VARIANT[trn.status] || 'default'}>
-            {t('status.' + trn.status) || trn.status}
-          </Badge>
         </div>
       </div>
 

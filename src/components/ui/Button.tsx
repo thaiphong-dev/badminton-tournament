@@ -1,3 +1,4 @@
+import React from 'react'
 import { cn } from '@/lib/utils/cn'
 import { Loader2 } from 'lucide-react'
 
@@ -15,6 +16,12 @@ const sizes = {
   lg: 'px-6 py-3 text-base',
 }
 
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: keyof typeof variants
+  size?: keyof typeof sizes
+  loading?: boolean
+}
+
 export default function Button({
   children,
   variant = 'primary',
@@ -23,7 +30,7 @@ export default function Button({
   disabled = false,
   className,
   ...props
-}) {
+}: ButtonProps) {
   return (
     <button
       disabled={disabled || loading}

@@ -16,11 +16,11 @@ import {
 } from '@/lib/constants'
 
 const GENDER_RULES = {
-  singles_men:    ['male'],
-  singles_women:  ['female'],
-  doubles_men:    ['male'],
-  doubles_women:  ['female'],
-  doubles_mixed:  ['male', 'female'],
+  mens_singles:   ['male'],
+  womens_singles: ['female'],
+  mens_doubles:   ['male'],
+  womens_doubles: ['female'],
+  mixed_doubles:  ['male', 'female'],
 }
 
 function genderLabel(allowed) {
@@ -68,6 +68,7 @@ const activeOverviewPageFetches = new Map<string, Promise<{
   events: any[]
   matchStatsMap: Record<string, { total: number, completed: number }>
   championMap: Record<string, string>
+  playerCounts: Record<string, number>
 }>>()
 const activePendingCountFetches = new Map<string, Promise<number>>()
 const activeMyRegFetches = new Map<string, Promise<Set<string>>>()
@@ -83,6 +84,7 @@ export default function TournamentOverview() {
   const [events, setEvents]           = useState([])
   const [matchStatsMap, setMatchStatsMap] = useState<Record<string, { total: number, completed: number }>>({})
   const [championMap, setChampionMap] = useState<Record<string, string>>({})
+  const [eventPlayerCounts, setEventPlayerCounts] = useState<Record<string, number>>({})
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -94,6 +96,37 @@ export default function TournamentOverview() {
   const [showRegModal, setShowRegModal]   = useState(false)
   const [athleteGender, setAthleteGender] = useState(undefined) // undefined = not loaded yet
   const [athleteDob,    setAthleteDob]    = useState(undefined) // undefined = not loaded yet
+  const [showAutoOpenRegModal, setShowAutoOpenRegModal] = useState(false)
+
+  useEffect(() => {
+    if (!tournament || !events.length || !profile?.id) return
+    const isCreator = tournament.creator_id === profile.id
+    if (!isCreator) return
+
+    const allConfigured = events.every(e => e.setup_complete || (eventPlayerCounts[e.id] || 0) > 0)
+    const regClosed = !tournament.registration_open
+    const promptedKey = `prompted_reg_open_${tournament.id}`
+    const alreadyPrompted = localStorage.getItem(promptedKey) === 'true'
+
+    if (allConfigured && regClosed && !alreadyPrompted) {
+      setShowAutoOpenRegModal(true)
+      localStorage.setItem(promptedKey, 'true')
+    }
+  }, [tournament, events, profile?.id, eventPlayerCounts])
+
+  async function handleAutoOpenRegistration() {
+    try {
+      const { error } = await supabase
+        .from('tournaments')
+        .update({ registration_open: true })
+        .eq('id', tournament.id)
+      if (error) throw error
+      setTournament(prev => prev ? { ...prev, registration_open: true } : null)
+      setShowAutoOpenRegModal(false)
+    } catch (err) {
+      console.error('Lỗi khi mở đăng ký:', err)
+    }
+  }
 
   useEffect(() => {
     fetchData(true, false)
@@ -165,13 +198,13 @@ export default function TournamentOverview() {
     if (!activePromise) {
       activePromise = Promise.resolve(supabase
         .from('profiles')
-        .select('gender, date_of_birth')
+        .select('gender, dob')
         .eq('id', profile.id)
         .single()
       )
         .then(({ data }) => ({
           gender: data?.gender ?? null,
-          dob: data?.date_of_birth ?? null,
+          dob: data?.dob ?? null,
         }))
         .finally(() => {
           if (activeAthleteProfileFetches.get(key) === activePromise) {
@@ -194,10 +227,11 @@ export default function TournamentOverview() {
       let fetchPromise = !force ? activeOverviewPageFetches.get(id) : null
       if (!fetchPromise) {
         fetchPromise = (async () => {
-          const [tRes, eRes, mRes] = await Promise.all([
+          const [tRes, eRes, mRes, pRes] = await Promise.all([
             supabase.from('tournaments').select('*').eq('id', id).single(),
             supabase.from('events').select('*').eq('tournament_id', id).order('sort_order'),
             supabase.from('matches').select('event_id, status, stage, winner_id').eq('tournament_id', id),
+            supabase.from('players').select('id, event_id').eq('tournament_id', id),
           ])
           if (tRes.error) throw tRes.error
           if (eRes.error) throw eRes.error
@@ -225,11 +259,19 @@ export default function TournamentOverview() {
             )
           }
 
+          const playerCounts: Record<string, number> = {}
+          for (const p of pRes.data || []) {
+            if (p.event_id) {
+              playerCounts[p.event_id] = (playerCounts[p.event_id] || 0) + 1
+            }
+          }
+
           return {
             tournament: tRes.data,
             events: eRes.data || [],
             matchStatsMap: stats,
             championMap: championMapData,
+            playerCounts,
           }
         })().finally(() => {
           if (activeOverviewPageFetches.get(id) === fetchPromise) {
@@ -247,6 +289,7 @@ export default function TournamentOverview() {
       setEvents(res.events)
       setMatchStatsMap(res.matchStatsMap)
       setChampionMap(res.championMap)
+      setEventPlayerCounts(res.playerCounts || {})
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -366,9 +409,15 @@ export default function TournamentOverview() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h1 className="text-xl font-bold text-gray-900">{tournament.name}</h1>
-              <Badge variant={allDone ? 'green' : tournament.status === 'knockout' ? 'purple' : tournament.status === 'group_stage' ? 'blue' : 'yellow'}>
-                {t('status.' + tournament.status) || tournament.status}
-              </Badge>
+              {tournament.registration_open ? (
+                <Badge variant="green">
+                  {t('home.openRegistration')}
+                </Badge>
+              ) : (
+                <Badge variant={allDone ? 'green' : tournament.status === 'knockout' ? 'purple' : tournament.status === 'group_stage' ? 'blue' : 'yellow'}>
+                  {t('status.' + tournament.status) || tournament.status}
+                </Badge>
+              )}
             </div>
 
             <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-3">
@@ -607,6 +656,35 @@ export default function TournamentOverview() {
         />
       )}
 
+      {/* Auto Open Registration Modal */}
+      {showAutoOpenRegModal && tournament && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all p-6 text-center">
+            <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 text-green-500">
+              <Trophy className="w-8 h-8 animate-bounce" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Hoàn tất cấu hình giải đấu! 🎉</h3>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Tất cả các nội dung thi đấu trong giải đấu đã được thiết lập cấu hình hoàn chỉnh. Bạn có muốn mở cổng đăng ký cho các vận động viên tham gia ngay bây giờ không?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAutoOpenRegModal(false)}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Để sau
+              </button>
+              <button
+                onClick={handleAutoOpenRegistration}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Mở đăng ký ngay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick event switcher strip */}
       {events.filter(e => e.status !== 'setup').length >= 2 && (
         <div className="bg-white border border-gray-200 rounded-xl mb-4 overflow-hidden">
@@ -742,6 +820,7 @@ export default function TournamentOverview() {
                   tournamentId={id}
                   matchStats={matchStatsMap[event.id] ?? null}
                   champion={championMap[event.id] ?? null}
+                  playerCount={eventPlayerCounts[event.id] || 0}
                   suspended={isSuspended && !isAdmin}
                   canManage={isCreator || isAdmin}
                   t={t}
@@ -801,10 +880,13 @@ export default function TournamentOverview() {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ event, tournamentId, matchStats, champion, suspended = false, canManage = false, t }) {
+function EventCard({ event, tournamentId, matchStats, champion, playerCount = 0, suspended = false, canManage = false, t }) {
   const icon     = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
   const label    = DISCIPLINE_LABELS[event.discipline] ?? event.name
-  const ctaHref  = eventRoute(tournamentId, event.id, event.status)
+  const isSetupReady = event.status === 'setup' && (event.setup_complete || playerCount > 0)
+  const ctaHref  = isSetupReady
+    ? `/tournament/${tournamentId}/event/${event.id}/players`
+    : eventRoute(tournamentId, event.id, event.status)
   const progress = matchStats && matchStats.total > 0
     ? Math.round((matchStats.completed / matchStats.total) * 100)
     : null
@@ -814,10 +896,18 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
     knockout:    'bg-purple-400',
     group_stage: 'bg-blue-400',
     attendance:  'bg-orange-400',
-    setup:       'bg-gray-200',
+    setup:       (event.setup_complete || playerCount > 0) ? 'bg-blue-400' : 'bg-gray-200',
   }[event.status] ?? 'bg-gray-200'
 
-  const ctaLabel = t(`overview.cta.${event.status}`) || t('overview.cta.default')
+  const ctaLabel = isSetupReady
+    ? 'Vận động viên'
+    : t(`overview.cta.${event.status}`) || t('overview.cta.default')
+
+  const badgeVariant = isSetupReady ? 'blue' : EVENT_STATUS_BADGE[event.status] || 'default'
+  const badgeLabel = isSetupReady ? 'Sẵn sàng' : t('status.' + event.status) || event.status
+
+  const isDoubles = ['mens_doubles', 'womens_doubles', 'mixed_doubles'].includes(event.discipline)
+  const slotUnit = isDoubles ? 'đôi' : 'VĐV'
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md hover:border-blue-200 transition-all group">
@@ -829,8 +919,8 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
             <span className="text-2xl leading-none shrink-0">{icon}</span>
             <p className="font-semibold text-gray-900 text-sm truncate">{label}</p>
           </div>
-          <Badge variant={EVENT_STATUS_BADGE[event.status] || 'default'} className="shrink-0">
-            {t('status.' + event.status) || event.status}
+          <Badge variant={badgeVariant} className="shrink-0">
+            {badgeLabel}
           </Badge>
         </div>
 
@@ -859,26 +949,38 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
           </div>
         )}
 
-        <div className="flex items-center gap-3 text-xs text-gray-500 mb-4">
-          {event.format === 'group_then_knockout' ? (
-            <>
+        <div className="space-y-1.5 mb-4 text-xs text-gray-500">
+          <div className="flex items-center gap-3">
+            {event.format === 'group_then_knockout' ? (
+              <>
+                <span className="flex items-center gap-1">
+                  <LayoutList className="w-3.5 h-3.5" />
+                  {t('overview.card.groups', { n: event.num_groups ?? '–' })}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5" />
+                  {t('overview.card.qualifyKnockout', { n: (event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0) })}
+                </span>
+              </>
+            ) : event.format === 'knockout_only' ? (
+              <span className="flex items-center gap-1">
+                <GitBranch className="w-3.5 h-3.5" />
+                {t('overview.card.directKnockout')}
+              </span>
+            ) : event.format === 'round_robin' ? (
               <span className="flex items-center gap-1">
                 <LayoutList className="w-3.5 h-3.5" />
-                {t('overview.card.groups', { n: event.num_groups ?? '–' })}
+                Vòng tròn ({event.num_groups ?? 1} bảng)
               </span>
-              <span className="flex items-center gap-1">
-                <Users className="w-3.5 h-3.5" />
-                {t('overview.card.qualifyKnockout', { n: (event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0) })}
-              </span>
-            </>
-          ) : event.format === 'knockout_only' ? (
-            <span className="flex items-center gap-1">
-              <GitBranch className="w-3.5 h-3.5" />
-              {t('overview.card.directKnockout')}
-            </span>
-          ) : (
-            <span className="text-gray-300 italic">{t('overview.card.notConfigured')}</span>
-          )}
+            ) : (
+              <span className="text-gray-300 italic">{t('overview.card.notConfigured')}</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Users className="w-3.5 h-3.5" />
+            <span>Đăng ký: <strong>{playerCount}</strong> / {event.max_teams ? `${event.max_teams} ${slotUnit}` : 'không giới hạn'}</span>
+          </div>
         </div>
 
         {suspended ? (
@@ -892,7 +994,7 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
             className="flex items-center justify-between w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              {eventCTAIcon(event.status)}
+              {isSetupReady ? <Users className="w-4 h-4" /> : eventCTAIcon(event.status)}
               {ctaLabel}
             </span>
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -909,6 +1011,16 @@ function EventCard({ event, tournamentId, matchStats, champion, suspended = fals
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </Link>
         ) : null}
+
+        {canManage && isSetupReady && (
+          <Link
+            to={`/tournament/${tournamentId}/event/${event.id}/setup`}
+            className="flex items-center justify-center gap-1 mt-2 text-xs text-gray-400 hover:text-blue-600 transition-colors py-1 bg-gray-50/50 hover:bg-gray-50 border border-gray-100 rounded-lg font-medium"
+          >
+            <Settings className="w-3 h-3" />
+            Cấu hình nội dung
+          </Link>
+        )}
 
         {canManage && event.status !== 'setup' && (
           <Link
@@ -1054,17 +1166,18 @@ function CloneTournamentModal({ tournament, events, profile, onClose, onCloned, 
       const { data: newT, error: tErr } = await supabase
         .from('tournaments')
         .insert({
-          name:           name.trim(),
-          start_date:     startDate || null,
-          end_date:       endDate   || null,
-          location:       location  || null,
-          creator_id:     profile.id,
-          status:         'setup',
-          registration_open: false,
-          num_courts:               tournament.num_courts,
-          num_first_place_qualify:  tournament.num_first_place_qualify,
-          num_second_place_qualify: tournament.num_second_place_qualify,
-          require_player_code:      tournament.require_player_code,
+          name:                           name.trim(),
+          start_date:                     startDate || null,
+          end_date:                       endDate   || null,
+          location:                       location  || null,
+          creator_id:                     profile.id,
+          status:                         'setup',
+          registration_open:              false,
+          num_courts:                     tournament.num_courts,
+          num_first_place_qualify:        tournament.num_first_place_qualify,
+          num_second_place_qualify:       tournament.num_second_place_qualify,
+          require_player_code:            tournament.require_player_code,
+          attendance_enabled:             tournament.attendance_enabled,
         })
         .select()
         .single()
@@ -1073,17 +1186,18 @@ function CloneTournamentModal({ tournament, events, profile, onClose, onCloned, 
       if (events.length > 0) {
         const { error: eErr } = await supabase.from('events').insert(
           events.map(e => ({
-            tournament_id: newT.id,
-            name:          e.name,
-            discipline:    e.discipline,
-            format:        e.format,
-            num_courts:    e.num_courts,
-            status:        'setup',
-            scoring_rules: e.scoring_rules,
+            tournament_id:            newT.id,
+            name:                     e.name,
+            discipline:               e.discipline,
+            format:                   e.format,
+            num_courts:               e.num_courts,
+            status:                   'setup',
+            scoring_rules:            e.scoring_rules,
             num_first_place_qualify:  e.num_first_place_qualify,
             num_second_place_qualify: e.num_second_place_qualify,
-            sort_order:    e.sort_order,
-            attendance_enabled: e.attendance_enabled,
+            sort_order:               e.sort_order,
+            require_player_code:      e.require_player_code,
+            attendance_enabled:       e.attendance_enabled,
           }))
         )
         if (eErr) throw eErr

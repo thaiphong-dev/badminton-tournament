@@ -1,6 +1,12 @@
+import React from 'react'
 import { cn } from '@/lib/utils/cn'
 
-export default function Input({ label, error, className, ...props }) {
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: React.ReactNode
+  error?: string | null
+}
+
+export default function Input({ label, error, className, ...props }: InputProps) {
   return (
     <div className="flex flex-col gap-1">
       {label && (

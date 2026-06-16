@@ -1,5 +1,5 @@
 import { useEffect, useState, startTransition } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   Settings, LayoutList, GitBranch, AlertCircle, CheckCircle,
   ChevronRight, Loader2, Info, ClipboardList, Grid, Plus, Trash2,
@@ -265,7 +265,9 @@ export default function EventSetup() {
           }
         }
       }
-      const scoringRules = {
+      const scoringRules = format === 'round_robin' ? {
+        group_stage:      { sets: gsSet,  points_per_set: gsPts  },
+      } : {
         group_stage:      { sets: gsSet,  points_per_set: gsPts  },
         knockout_regular: { sets: regSet, points_per_set: regPts },
         ...(useLate ? {
@@ -276,7 +278,7 @@ export default function EventSetup() {
         .from('events')
         .update({
           format,
-          num_groups:                format === 'group_then_knockout' ? Number(numGroups) : null,
+          num_groups:                (format === 'group_then_knockout' || format === 'round_robin') ? Number(numGroups) : null,
           num_first_place_qualify:   format === 'group_then_knockout' ? Number(numFirst)  : null,
           num_second_place_qualify:  format === 'group_then_knockout' ? Number(numSecond) : null,
           scoring_rules:             scoringRules,
@@ -288,6 +290,7 @@ export default function EventSetup() {
           tiebreaker_mode:           tiebreakerMode,
           schedule_start_time:       scheduleStartTime || null,
           wave_duration_minutes:     Number(waveDurationMins),
+          setup_complete:            true,
         })
         .eq('id', eventId)
       if (err) throw err
@@ -310,7 +313,7 @@ export default function EventSetup() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const totalQualify  = Number(numFirst) + Number(numSecond)
-  const bracketOk     = format === 'knockout_only' || isValidBracketSize(Number(numFirst), Number(numSecond))
+  const bracketOk     = format === 'knockout_only' || format === 'round_robin' || isValidBracketSize(Number(numFirst), Number(numSecond))
   const suggestedNext = bracketOk ? null : nextPowerOfTwo(totalQualify)
 
   // Age restriction helper variables
@@ -390,6 +393,7 @@ export default function EventSetup() {
             options={[
               { value: FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT, label: FORMAT_LABELS.group_then_knockout },
               { value: FORMAT_OPTIONS.KNOCKOUT_ONLY,       label: FORMAT_LABELS.knockout_only       },
+              { value: FORMAT_OPTIONS.ROUND_ROBIN,         label: FORMAT_LABELS.round_robin         },
             ]}
             value={format}
             onChange={v => { setFormat(v); setSaved(false) }}
@@ -397,64 +401,79 @@ export default function EventSetup() {
         </Section>
 
         {/* ── SECTION 2: Group config ── */}
-        {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
+        {(format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT || format === FORMAT_OPTIONS.ROUND_ROBIN) && (
           <Section icon={LayoutList} title={t('eventSetup.section.groupConfig')}>
-            <div className="grid grid-cols-3 gap-4">
-              <Input
-                label={t('eventSetup.groups.numGroups')}
-                type="number"
-                min="1"
-                max="32"
-                value={numGroups}
-                onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
-              />
-              <Input
-                label={t('eventSetup.groups.numFirst')}
-                type="number"
-                min="1"
-                value={numFirst}
-                onChange={e => { setNumFirst(e.target.value); setSaved(false) }}
-              />
-              <Input
-                label={t('eventSetup.groups.numSecond')}
-                type="number"
-                min="0"
-                value={numSecond}
-                onChange={e => { setNumSecond(e.target.value); setSaved(false) }}
-              />
-            </div>
+            {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT ? (
+              <div className="grid grid-cols-3 gap-4">
+                <Input
+                  label={t('eventSetup.groups.numGroups')}
+                  type="number"
+                  min="1"
+                  max="32"
+                  value={numGroups}
+                  onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
+                />
+                <Input
+                  label={t('eventSetup.groups.numFirst')}
+                  type="number"
+                  min="1"
+                  value={numFirst}
+                  onChange={e => { setNumFirst(e.target.value); setSaved(false) }}
+                />
+                <Input
+                  label={t('eventSetup.groups.numSecond')}
+                  type="number"
+                  min="0"
+                  value={numSecond}
+                  onChange={e => { setNumSecond(e.target.value); setSaved(false) }}
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                <Input
+                  label={t('eventSetup.groups.numGroups')}
+                  type="number"
+                  min="1"
+                  max="32"
+                  value={numGroups}
+                  onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
+                />
+              </div>
+            )}
 
-            {/* Bracket size validation */}
-            <div className={cn(
-              'flex items-start gap-2 mt-3 px-3 py-2.5 rounded-lg text-sm',
-              bracketOk
-                ? 'bg-green-50 text-green-700'
-                : 'bg-yellow-50 text-yellow-700',
-            )}>
-              {bracketOk
-                ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                : <Info className="w-4 h-4 mt-0.5 shrink-0" />
-              }
-              {bracketOk
-                ? <span>{t('eventSetup.groups.bracketOk', { n: totalQualify })}</span>
-                : <span>
-                    {t('eventSetup.groups.bracketBad', {
-                      n: totalQualify,
-                      suggested: suggestedNext,
-                      half: suggestedNext / 2,
-                    })}
-                  </span>
-              }
-            </div>
+            {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
+              /* Bracket size validation */
+              <div className={cn(
+                'flex items-start gap-2 mt-3 px-3 py-2.5 rounded-lg text-sm',
+                bracketOk
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-yellow-50 text-yellow-700',
+              )}>
+                {bracketOk
+                  ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  : <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                }
+                {bracketOk
+                  ? <span>{t('eventSetup.groups.bracketOk', { n: totalQualify })}</span>
+                  : <span>
+                      {t('eventSetup.groups.bracketBad', {
+                        n: totalQualify,
+                        suggested: suggestedNext,
+                        half: suggestedNext / 2,
+                      })}
+                    </span>
+                }
+              </div>
+            )}
           </Section>
         )}
 
         {/* ── SECTION 3: Scoring rules ── */}
         <Section icon={GitBranch} title={t('eventSetup.section.scoringRules')}>
           <div className="space-y-1">
-            {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
+            {(format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT || format === FORMAT_OPTIONS.ROUND_ROBIN) && (
               <ScoringRuleRow
-                label={t('eventSetup.scoring.groupStage')}
+                label={format === FORMAT_OPTIONS.ROUND_ROBIN ? 'Đấu vòng tròn' : t('eventSetup.scoring.groupStage')}
                 sets={gsSet}
                 pointsPerSet={gsPts}
                 ptsLabel={ptsLabel}
@@ -462,67 +481,71 @@ export default function EventSetup() {
                 onPointsChange={v => { setGsPts(v); setSaved(false) }}
               />
             )}
-            <ScoringRuleRow
-              label={t('eventSetup.scoring.knockoutRegular')}
-              sets={regSet}
-              pointsPerSet={regPts}
-              ptsLabel={ptsLabel}
-              onSetsChange={v => { setRegSet(v); setSaved(false) }}
-              onPointsChange={v => { setRegPts(v); setSaved(false) }}
-            />
+            {format !== FORMAT_OPTIONS.ROUND_ROBIN && (
+              <ScoringRuleRow
+                label={t('eventSetup.scoring.knockoutRegular')}
+                sets={regSet}
+                pointsPerSet={regPts}
+                ptsLabel={ptsLabel}
+                onSetsChange={v => { setRegSet(v); setSaved(false) }}
+                onPointsChange={v => { setRegPts(v); setSaved(false) }}
+              />
+            )}
 
-            {/* Late-round override toggle */}
-            <div className="pt-3">
-              <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={useLate}
-                  onClick={() => { setUseLate(v => !v); setSaved(false) }}
-                  className={cn(
-                    'relative w-9 h-5 rounded-full transition-colors focus:outline-none',
-                    useLate ? 'bg-blue-500' : 'bg-gray-200',
-                  )}
-                >
-                  <span className={cn(
-                    'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
-                    useLate ? 'translate-x-4' : 'translate-x-0',
-                  )} />
-                </button>
-                <span className="text-sm font-medium text-gray-700">
-                  {t('eventSetup.scoring.lateRoundToggle')}
-                </span>
-              </label>
+            {format !== FORMAT_OPTIONS.ROUND_ROBIN && (
+              /* Late-round override toggle */
+              <div className="pt-3">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useLate}
+                    onClick={() => { setUseLate(v => !v); setSaved(false) }}
+                    className={cn(
+                      'relative w-9 h-5 rounded-full transition-colors focus:outline-none',
+                      useLate ? 'bg-blue-500' : 'bg-gray-200',
+                    )}
+                  >
+                    <span className={cn(
+                      'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                      useLate ? 'translate-x-4' : 'translate-x-0',
+                    )} />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    {t('eventSetup.scoring.lateRoundToggle')}
+                  </span>
+                </label>
 
-              {useLate && (
-                <div className="mt-3 pl-11 space-y-3">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm text-gray-500 shrink-0">{t('eventSetup.scoring.appliesFrom')}</span>
-                    <RadioGroup
-                      options={[
-                        { value: 'quarter', label: t('eventSetup.scoring.quarter') },
-                        { value: 'semi',    label: t('eventSetup.scoring.semi')    },
-                      ]}
-                      value={lateFrom}
-                      onChange={v => { setLateFrom(v); setSaved(false) }}
+                {useLate && (
+                  <div className="mt-3 pl-11 space-y-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-sm text-gray-500 shrink-0">{t('eventSetup.scoring.appliesFrom')}</span>
+                      <RadioGroup
+                        options={[
+                          { value: 'quarter', label: t('eventSetup.scoring.quarter') },
+                          { value: 'semi',    label: t('eventSetup.scoring.semi')    },
+                        ]}
+                        value={lateFrom}
+                        onChange={v => { setLateFrom(v); setSaved(false) }}
+                      />
+                    </div>
+                    <ScoringRuleRow
+                      label={t('eventSetup.scoring.lateRound')}
+                      sets={lateSet}
+                      pointsPerSet={latePts}
+                      ptsLabel={ptsLabel}
+                      onSetsChange={v => { setLateSet(v); setSaved(false) }}
+                      onPointsChange={v => { setLatePts(v); setSaved(false) }}
                     />
                   </div>
-                  <ScoringRuleRow
-                    label={t('eventSetup.scoring.lateRound')}
-                    sets={lateSet}
-                    pointsPerSet={latePts}
-                    ptsLabel={ptsLabel}
-                    onSetsChange={v => { setLateSet(v); setSaved(false) }}
-                    onPointsChange={v => { setLatePts(v); setSaved(false) }}
-                  />
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </Section>
 
         {/* ── SECTION: Tiebreaker ── */}
-        {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT && (
+        {(format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT || format === FORMAT_OPTIONS.ROUND_ROBIN) && (
           <Section icon={GitBranch} title={t('eventSetup.section.tiebreaker')}>
             <div className="space-y-3">
               <div>
@@ -581,14 +604,14 @@ export default function EventSetup() {
 
         {/* ── SECTION: Mode ── */}
         <Section icon={Info} title={t('eventSetup.section.mode')}>
-          <label className="flex items-start gap-3 cursor-pointer select-none">
+          <div className="flex items-start gap-3 select-none">
             <button
               type="button"
               role="switch"
               aria-checked={requirePlayerCode}
-              onClick={() => { setRequirePlayerCode(v => !v); setSaved(false) }}
+              disabled
               className={cn(
-                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0',
+                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 opacity-80 cursor-not-allowed',
                 requirePlayerCode ? 'bg-blue-500' : 'bg-gray-200',
               )}
             >
@@ -598,26 +621,34 @@ export default function EventSetup() {
               )} />
             </button>
             <div>
-              <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.requireCode')}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.requireCode')}</p>
+                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">
+                  Cấu hình chung
+                </span>
+              </div>
               <p className="text-xs text-gray-400 mt-0.5">
                 {requirePlayerCode
                   ? t('eventSetup.mode.requireCodeOn')
                   : t('eventSetup.mode.requireCodeOff')}
               </p>
+              <p className="text-[10px] text-blue-500 mt-1">
+                Thiết lập này được áp dụng chung từ giải đấu. Bạn có thể thay đổi tại <Link to={`/tournament/${tournamentId}/edit`} className="underline hover:text-blue-700">Chỉnh sửa giải đấu</Link>.
+              </p>
             </div>
-          </label>
+          </div>
         </Section>
 
         {/* ── SECTION: Attendance ── */}
         <Section icon={ClipboardList} title={t('eventSetup.section.attendance')}>
-          <label className="flex items-start gap-3 cursor-pointer select-none">
+          <div className="flex items-start gap-3 select-none">
             <button
               type="button"
               role="switch"
               aria-checked={attendanceEnabled}
-              onClick={() => { setAttendanceEnabled(v => !v); setSaved(false) }}
+              disabled
               className={cn(
-                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0',
+                'relative mt-0.5 w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 opacity-80 cursor-not-allowed',
                 attendanceEnabled ? 'bg-blue-500' : 'bg-gray-200',
               )}
             >
@@ -627,14 +658,22 @@ export default function EventSetup() {
               )} />
             </button>
             <div>
-              <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.attendanceOn')}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-gray-700">{t('eventSetup.mode.attendanceOn')}</p>
+                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">
+                  Cấu hình chung
+                </span>
+              </div>
               <p className="text-xs text-gray-400 mt-0.5">
                 {attendanceEnabled
                   ? t('eventSetup.mode.attendanceOnHint')
                   : t('eventSetup.mode.attendanceOff')}
               </p>
+              <p className="text-[10px] text-blue-500 mt-1">
+                Thiết lập này được áp dụng chung từ giải đấu. Bạn có thể thay đổi tại <Link to={`/tournament/${tournamentId}/edit`} className="underline hover:text-blue-700">Chỉnh sửa giải đấu</Link>.
+              </p>
             </div>
-          </label>
+          </div>
         </Section>
 
         {/* ── SECTION: Age restriction ── */}

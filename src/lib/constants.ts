@@ -62,11 +62,13 @@ export const EVENT_STATUS_BADGE = {
 export const FORMAT_OPTIONS = {
   GROUP_THEN_KNOCKOUT: 'group_then_knockout',
   KNOCKOUT_ONLY:       'knockout_only',
+  ROUND_ROBIN:         'round_robin',
 }
 
 export const FORMAT_LABELS = {
   group_then_knockout: 'Vòng bảng → Knockout',
   knockout_only:       'Toàn bộ đánh loại trực tiếp',
+  round_robin:         'Vòng tròn tính điểm',
 }
 
 // ── Default scoring rules per event ──────────────────────────────────────────

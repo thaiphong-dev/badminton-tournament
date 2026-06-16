@@ -12,6 +12,8 @@ import Button from '@/components/ui/Button'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
+import StandingsTable from '@/components/groups/StandingsTable'
+import { calculateStandings } from '@/lib/utils/standingsCalculator'
 
 const STAGE_ORDER  = ['round_of_16', 'quarter', 'semi', 'final', 'third_place']
 const STAGE_LABELS = {
@@ -35,6 +37,8 @@ export default function ResultsPage() {
   const [event, setEvent]                     = useState(null)
   const [players, setPlayers]                 = useState([])
   const [knockoutMatches, setKnockoutMatches] = useState([])
+  const [groups, setGroups]                   = useState([])
+  const [groupMatches, setGroupMatches]       = useState([])
   const [loading, setLoading]                 = useState(true)
   const [error, setError]                     = useState(null)
   const [exporting, setExporting]             = useState(false)
@@ -55,20 +59,41 @@ export default function ResultsPage() {
         setEvent(ev)
       }
 
-      const [pRes, mRes] = await Promise.all([
+      const promises = [
         eventId
           ? supabase.from('players').select('*').eq('event_id', eventId)
           : supabase.from('players').select('*').eq('tournament_id', id),
         eventId
           ? supabase.from('matches').select('*').eq('event_id', eventId).neq('stage', 'group').order('match_number')
-          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number'),
-      ])
+          : supabase.from('matches').select('*').eq('tournament_id', id).neq('stage', 'group').order('match_number')
+      ]
+
+      if (ev && ev.format === 'round_robin') {
+        promises.push(
+          supabase.from('groups').select('*, group_players(*, players(id, name, club))').eq('event_id', eventId).order('group_number'),
+          supabase.from('matches').select('*').eq('event_id', eventId).eq('stage', 'group').order('match_number')
+        )
+      }
+
+      const results = await Promise.all(promises)
+      const pRes = results[0]
+      const mRes = results[1]
+
       if (pRes.error) throw pRes.error
       if (mRes.error) throw mRes.error
 
       setPlayers(pRes.data || [])
       setKnockoutMatches(mRes.data || [])
-    } catch (err) {
+
+      if (ev && ev.format === 'round_robin') {
+        const gRes = results[2]
+        const gmRes = results[3]
+        if (gRes.error) throw gRes.error
+        if (gmRes.error) throw gmRes.error
+        setGroups(gRes.data || [])
+        setGroupMatches(gmRes.data || [])
+      }
+    } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
@@ -82,7 +107,53 @@ export default function ResultsPage() {
     [players]
   )
 
+  const enrichedGroups = useMemo(() => {
+    return groups.map(g => {
+      const gPlayers = (g.group_players || []).map(gp => gp.players).filter(Boolean)
+      const gMatches = groupMatches.filter(m => m.group_id === g.id)
+      const standings = calculateStandings(gMatches, gPlayers, { tiebreakerMode: event?.tiebreaker_mode ?? 'bwf' })
+      return { ...g, standings }
+    })
+  }, [groups, groupMatches, event?.tiebreaker_mode])
+
   const rankings = useMemo(() => {
+    if (event?.format === 'round_robin') {
+      if (enrichedGroups.length === 0) return null
+
+      if (enrichedGroups.length === 1) {
+        const standings = enrichedGroups[0].standings
+        return {
+          first:  standings[0] ? playerMap[standings[0].player.id] : null,
+          second: standings[1] ? playerMap[standings[1].player.id] : null,
+          third:  standings[2] ? playerMap[standings[2].player.id] : null,
+          fourth: standings[3] ? playerMap[standings[3].player.id] : null,
+        }
+      } else {
+        const allStandings = enrichedGroups.flatMap(eg => eg.standings)
+        const sortedGlobally = [...allStandings].sort((a, b) => {
+          if (a.rank !== b.rank) return a.rank - b.rank
+          if (b.points !== a.points) return b.points - a.points
+          const matchesPlayedA = a.wins + a.losses
+          const matchesPlayedB = b.wins + b.losses
+          const winRateA = matchesPlayedA > 0 ? a.wins / matchesPlayedA : 0
+          const winRateB = matchesPlayedB > 0 ? b.wins / matchesPlayedB : 0
+          if (winRateB !== winRateA) return winRateB - winRateA
+          const setsRatioA = (a.sets_for + a.sets_against) > 0 ? a.sets_for / (a.sets_for + a.sets_against) : 0
+          const setsRatioB = (b.sets_for + b.sets_against) > 0 ? b.sets_for / (b.sets_for + b.sets_against) : 0
+          if (setsRatioB !== setsRatioA) return setsRatioB - setsRatioA
+          const scoreRatioA = (a.score_for + a.score_against) > 0 ? a.score_for / (a.score_for + a.score_against) : 0
+          const scoreRatioB = (b.score_for + b.score_against) > 0 ? b.score_for / (b.score_for + b.score_against) : 0
+          return scoreRatioB - scoreRatioA
+        })
+        return {
+          first:  sortedGlobally[0] ? playerMap[sortedGlobally[0].player.id] : null,
+          second: sortedGlobally[1] ? playerMap[sortedGlobally[1].player.id] : null,
+          third:  sortedGlobally[2] ? playerMap[sortedGlobally[2].player.id] : null,
+          fourth: sortedGlobally[3] ? playerMap[sortedGlobally[3].player.id] : null,
+        }
+      }
+    }
+
     const fin   = knockoutMatches.find(m => m.stage === 'final')
     const third = knockoutMatches.find(m => m.stage === 'third_place')
     if (!fin?.winner_id) return null
@@ -96,7 +167,7 @@ export default function ResultsPage() {
       third:  third?.winner_id ? (playerMap[third.winner_id] ?? null) : null,
       fourth: thirdLoser ? (playerMap[thirdLoser] ?? null) : null,
     }
-  }, [knockoutMatches, playerMap])
+  }, [knockoutMatches, playerMap, event?.format, enrichedGroups])
 
   const matchesByStage = useMemo(() => {
     const map = {}
@@ -189,7 +260,11 @@ export default function ResultsPage() {
                 <Badge variant={statusBadgeVar}>{statusLabel}</Badge>
               </div>
               <p className="text-sm text-gray-500 mt-0.5">
-                {players.length} VĐV · {completedCount}/{knockoutMatches.length} trận knockout
+                {event?.format === 'round_robin' ? (
+                  `${players.length} VĐV · ${groupMatches.filter(m => m.status === 'completed').length}/${groupMatches.length} trận đấu`
+                ) : (
+                  `${players.length} VĐV · ${completedCount}/${knockoutMatches.length} trận knockout`
+                )}
               </p>
             </div>
           </div>
@@ -211,7 +286,7 @@ export default function ResultsPage() {
           <Trophy className="w-10 h-10 text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">Giải đấu chưa hoàn thành.</p>
           <Link
-            to={knockoutHref}
+            to={event?.format === 'round_robin' ? `/tournament/${id}/event/${eventId}/groups` : knockoutHref}
             className="text-blue-600 text-sm underline mt-2 inline-block"
           >
             Quay lại nhập kết quả →
@@ -219,8 +294,21 @@ export default function ResultsPage() {
         </div>
       )}
 
+      {/* Standings Table for Round Robin */}
+      {event?.format === 'round_robin' && enrichedGroups.map((eg, idx) => {
+        const label = String.fromCharCode(65 + idx)
+        return (
+          <div key={eg.id} className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+            <h2 className="font-bold text-gray-900">Bảng xếp hạng Bảng {label}</h2>
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <StandingsTable standings={eg.standings} />
+            </div>
+          </div>
+        )
+      })}
+
       {/* Knockout results by stage */}
-      {STAGE_ORDER
+      {event?.format !== 'round_robin' && STAGE_ORDER
         .filter(s => matchesByStage[s]?.length > 0)
         .map(stage => (
           <StageResults

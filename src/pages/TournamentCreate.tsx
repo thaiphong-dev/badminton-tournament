@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Trophy, Check, AlertCircle, ExternalLink,
-  Upload, X, FileText, Image, Info,
+  Upload, X, FileText, Image, Info, ClipboardList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -144,7 +144,7 @@ export default function TournamentCreate() {
   const [startDate, setStartDate]     = useState('')
   const [endDate, setEndDate]         = useState('')
   const [regDeadline, setRegDeadline] = useState('')
-  const [step1Errors, setStep1Errors] = useState({})
+  const [step1Errors, setStep1Errors] = useState<Record<string, string | null>>({})
 
   // Step 2 fields
   const [selected, setSelected]       = useState(['mens_singles'])
@@ -155,6 +155,8 @@ export default function TournamentCreate() {
   const [prizeStructure, setPrizeStructure]   = useState('')
   const [regulationsFile, setRegulationsFile] = useState(null)
   const [chatQrFile, setChatQrFile]           = useState(null)
+  const [requirePlayerCode, setRequirePlayerCode] = useState(false)
+  const [attendanceEnabled, setAttendanceEnabled] = useState(false)
 
   const [maxEvents, setMaxEvents]     = useState(null)
   const [loading, setLoading]         = useState(false)
@@ -167,9 +169,8 @@ export default function TournamentCreate() {
     })
   }, [profile?.id])
 
-  // ── Step 1 validation ───────────────────────────────────────────────────────
   function validateStep1() {
-    const errs = {}
+    const errs: Record<string, string> = {}
     const trimmed = name.trim()
     if (!trimmed) {
       errs.name = 'Tên giải đấu là bắt buộc'
@@ -252,6 +253,8 @@ export default function TournamentCreate() {
           registration_deadline: regDeadline || null,
           prize_structure:       prizeStructure.trim() || null,
           creator_id:            profile?.id ?? null,
+          require_player_code:   requirePlayerCode,
+          attendance_enabled:    attendanceEnabled,
         })
         .select()
         .single()
@@ -308,6 +311,8 @@ export default function TournamentCreate() {
           scoring_rules:             DEFAULT_EVENT_SCORING_RULES,
           sort_order:                idx,
           max_teams:                 maxTeamsMap[d.value] ?? null,
+          require_player_code:       requirePlayerCode,
+          attendance_enabled:        attendanceEnabled,
         }))
 
       const { error: eErr } = await supabase.from('events').insert(eventsToInsert)
@@ -343,7 +348,7 @@ export default function TournamentCreate() {
           </div>
         </div>
 
-        <StepIndicator current={step} t={t} />
+        <StepIndicator current={step} />
 
         {/* ── STEP 1: Basic info ── */}
         {step === 1 && (
@@ -482,6 +487,75 @@ export default function TournamentCreate() {
         {/* ── STEP 3: Extra config ── */}
         {step === 3 && (
           <div className="space-y-5">
+            {/* Chế độ thi đấu & Điểm danh */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm space-y-4">
+              {/* Chế độ thi đấu */}
+              <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+                  <Info className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-900">Chế độ thi đấu</h3>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={requirePlayerCode}
+                      onClick={() => setRequirePlayerCode(v => !v)}
+                      className={cn(
+                        'relative w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 cursor-pointer',
+                        requirePlayerCode ? 'bg-blue-500' : 'bg-gray-200',
+                      )}
+                    >
+                      <span className={cn(
+                        'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                        requirePlayerCode ? 'translate-x-4' : 'translate-x-0',
+                      )} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium">
+                    Giải chuyên nghiệp — yêu cầu mã số VĐV
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    Giải phong trào — không cần mã số, nhập tên tự do.
+                  </p>
+                </div>
+              </div>
+
+              {/* Điểm danh */}
+              <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+                <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center shrink-0">
+                  <ClipboardList className="w-5 h-5 text-red-500" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-900">Điểm danh</h3>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={attendanceEnabled}
+                      onClick={() => setAttendanceEnabled(v => !v)}
+                      className={cn(
+                        'relative w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 cursor-pointer',
+                        attendanceEnabled ? 'bg-blue-500' : 'bg-gray-200',
+                      )}
+                    >
+                      <span className={cn(
+                        'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                        attendanceEnabled ? 'translate-x-4' : 'translate-x-0',
+                      )} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium">
+                    Bật bắt buộc điểm danh trước khi thi đấu
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    Các trận đấu sẽ bị khóa cho đến khi VĐV được đánh dấu có mặt. VĐV vắng mặt sẽ bị xử thua W/O ở tất cả các trận của họ.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Prize structure */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">

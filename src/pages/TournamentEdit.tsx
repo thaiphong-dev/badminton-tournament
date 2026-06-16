@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Trophy, Check, AlertCircle, Info, Upload, X, FileText,
-  Image, Loader2, Save, Clock, AlertTriangle, Lock, Phone,
+  Image, Loader2, Save, Clock, AlertTriangle, Lock, Phone, ClipboardList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -86,7 +86,9 @@ export default function TournamentEdit() {
   const [regulationsFile, setRegFile] = useState(null)
   const [chatQrFile, setQrFile]       = useState(null)
   const [maxTeamsMap, setMaxTeamsMap] = useState({})  // eventId → number | null
-  const [fieldErrors, setFieldErrors] = useState({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({})
+  const [requirePlayerCode, setRequirePlayerCode] = useState(false)
+  const [attendanceEnabled, setAttendanceEnabled] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -106,6 +108,8 @@ export default function TournamentEdit() {
       setEndDate(t.end_date || '')
       setRegDeadline(t.registration_deadline || '')
       setPrize(t.prize_structure || '')
+      setRequirePlayerCode(t.require_player_code ?? false)
+      setAttendanceEnabled(t.attendance_enabled ?? false)
       const mtMap = {}
       for (const ev of eRes.data || []) mtMap[ev.id] = ev.max_teams ?? null
       setMaxTeamsMap(mtMap)
@@ -134,9 +138,8 @@ export default function TournamentEdit() {
   const canEdit       = days > 5   // locked if ≤ 5 days before start (or no start date set)
   const canEditStart  = days > 15  // can only change start_date if > 15 days out
 
-  // ── Validation ──────────────────────────────────────────────────────────────
   function validate() {
-    const errs = {}
+    const errs: Record<string, string> = {}
     if (!name.trim() || name.trim().length < 3) errs.name = 'Tên giải đấu phải có ít nhất 3 ký tự'
     if (!startDate) errs.startDate = 'Ngày bắt đầu là bắt buộc'
     if (!endDate) errs.endDate = 'Ngày kết thúc là bắt buộc'
@@ -165,6 +168,8 @@ export default function TournamentEdit() {
           end_date:              endDate || null,
           registration_deadline: regDeadline || null,
           prize_structure:       prizeStructure.trim() || null,
+          require_player_code:   requirePlayerCode,
+          attendance_enabled:    attendanceEnabled,
           info_updated_at:       new Date().toISOString(),
         })
         .eq('id', id)
@@ -202,12 +207,16 @@ export default function TournamentEdit() {
         await supabase.from('tournaments').update({ regulations_url: regulationsUrl, chat_qr_url: chatQrUrl }).eq('id', id)
       }
 
-      // 3. Update event max_teams
-      await Promise.all(
-        events.map(ev =>
+      // 3. Update event max_teams and sync configurations
+      await Promise.all([
+        ...events.map(ev =>
           supabase.from('events').update({ max_teams: maxTeamsMap[ev.id] ?? null }).eq('id', ev.id)
-        )
-      )
+        ),
+        supabase.from('events').update({
+          require_player_code: requirePlayerCode,
+          attendance_enabled: attendanceEnabled,
+        }).eq('tournament_id', id)
+      ])
 
       // Bell notifications for athletes + umpires are sent server-side by
       // the on_tournament_info_update DB trigger. PWA push must be sent
@@ -397,6 +406,80 @@ export default function TournamentEdit() {
                   onChange={e => { setRegDeadline(e.target.value); setFieldErrors(p => ({ ...p, regDeadline: null })) }}
                   error={fieldErrors.regDeadline}
                 />
+              </div>
+            </section>
+
+            {/* ── Cấu hình chung giải đấu ── */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-700 mb-3 pb-1 border-b border-gray-100">
+                Cấu hình chung giải đấu
+              </h2>
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm space-y-4">
+                {/* Chế độ thi đấu */}
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+                  <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+                    <Info className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Chế độ thi đấu</h3>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={requirePlayerCode}
+                        onClick={() => setRequirePlayerCode(v => !v)}
+                        className={cn(
+                          'relative w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 cursor-pointer',
+                          requirePlayerCode ? 'bg-blue-500' : 'bg-gray-200',
+                        )}
+                      >
+                        <span className={cn(
+                          'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                          requirePlayerCode ? 'translate-x-4' : 'translate-x-0',
+                        )} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-600 font-medium">
+                      Giải chuyên nghiệp — yêu cầu mã số VĐV
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      Giải phong trào — không cần mã số, nhập tên tự do.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Điểm danh */}
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+                  <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-5 h-5 text-red-500" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Điểm danh</h3>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={attendanceEnabled}
+                        onClick={() => setAttendanceEnabled(v => !v)}
+                        className={cn(
+                          'relative w-9 h-5 rounded-full transition-colors focus:outline-none shrink-0 cursor-pointer',
+                          attendanceEnabled ? 'bg-blue-500' : 'bg-gray-200',
+                        )}
+                      >
+                        <span className={cn(
+                          'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                          attendanceEnabled ? 'translate-x-4' : 'translate-x-0',
+                        )} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-600 font-medium">
+                      Bật bắt buộc điểm danh trước khi thi đấu
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      Các trận đấu sẽ bị khóa cho đến khi VĐV được đánh dấu có mặt. VĐV vắng mặt sẽ bị xử thua W/O ở tất cả các trận của họ.
+                    </p>
+                  </div>
+                </div>
               </div>
             </section>
 

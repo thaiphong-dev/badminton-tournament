@@ -16,6 +16,7 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
   const [rejectModal, setRejectModal] = useState(null)  // { regId }
   const [actionId, setActionId] = useState(null)
   const [error, setError]       = useState(null)
+  const [limitWarning, setLimitWarning] = useState(null)
 
   const fetchRegs = useCallback(async () => {
     const [rRes, eRes] = await Promise.all([
@@ -24,7 +25,7 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
         .select(`
           id, status, note, created_at,
           athlete_id, partner_id, partner_name, partner_club,
-          events(id, name, discipline),
+          events(id, name, discipline, max_teams),
           profiles!athlete_id(id, name, phone, club),
           partner_profile:profiles!partner_id(id, name, club)
         `)
@@ -32,7 +33,7 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
         .order('created_at', { ascending: true }),
       supabase
         .from('events')
-        .select('id, name, discipline')
+        .select('id, name, discipline, max_teams')
         .eq('tournament_id', tournamentId),
     ])
     setRegs(rRes.data || [])
@@ -45,6 +46,37 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
   async function handleApprove(id) {
     setActionId(id)
     setError(null)
+    const reg = regs.find(r => r.id === id)
+    if (!reg) {
+      setActionId(null)
+      return
+    }
+
+    const event = reg.events
+    if (event && event.max_teams !== null) {
+      // Query database for current player count of this event
+      const { count, error: countErr } = await supabase
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+
+      if (countErr) {
+        setError(countErr.message)
+        setActionId(null)
+        return
+      }
+
+      if ((count ?? 0) >= event.max_teams) {
+        const label = DISCIPLINE_LABELS[event.discipline] || event.name || ''
+        setLimitWarning({
+          eventName: label,
+          maxTeams: event.max_teams
+        })
+        setActionId(null)
+        return
+      }
+    }
+
     const { error: err } = await supabase
       .from('tournament_registrations')
       .update({ status: 'approved' })
@@ -219,6 +251,29 @@ export default function RegistrationReview({ tournamentId, tournamentName = '' }
           saving={!!actionId}
           t={t}
         />
+      )}
+
+      {/* Warning capacity limit modal */}
+      {limitWarning && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all p-6">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-gray-900">Không thể duyệt</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Nội dung <strong>{limitWarning.eventName}</strong> đã đạt số lượng giới hạn tối đa ({limitWarning.maxTeams} đội/VĐV). Vui lòng nâng giới hạn số đội trong phần Cấu hình giải đấu hoặc từ chối đơn đăng ký.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setLimitWarning(null)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Đồng ý
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

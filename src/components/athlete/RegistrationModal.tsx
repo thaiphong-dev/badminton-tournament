@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, CheckCircle2, AlertCircle, Search, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { sendPush } from '@/lib/utils/sendPush'
@@ -68,11 +68,11 @@ function CustomFieldInput({ field, value, onChange }) {
 }
 
 const GENDER_RULES = {
-  singles_men:   ['male'],
-  singles_women: ['female'],
-  doubles_men:   ['male'],
-  doubles_women: ['female'],
-  doubles_mixed: ['male', 'female'],
+  mens_singles:   ['male'],
+  womens_singles: ['female'],
+  mens_doubles:   ['male'],
+  womens_doubles: ['female'],
+  mixed_doubles:  ['male', 'female'],
 }
 
 /**
@@ -94,6 +94,32 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
   const [partnerNotFound, setPartnerNotFound] = useState(false)
   const [partnerName, setPartnerName]   = useState('')
   const [partnerClub, setPartnerClub]   = useState('')
+
+  const [eventPlayerCounts, setEventPlayerCounts] = useState({})
+  const [limitWarning, setLimitWarning] = useState(null)
+
+  useEffect(() => {
+    async function fetchCounts() {
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('event_id')
+          .eq('tournament_id', tournament.id)
+        if (error) throw error
+
+        const counts = {}
+        data?.forEach(p => {
+          if (p.event_id) {
+            counts[p.event_id] = (counts[p.event_id] || 0) + 1
+          }
+        })
+        setEventPlayerCounts(counts)
+      } catch (err) {
+        console.error('Lỗi khi tải số lượng VĐV:', err)
+      }
+    }
+    fetchCounts()
+  }, [tournament.id])
 
   const available = events.filter(e => {
     if (existingEventIds.has(e.id)) return false
@@ -117,6 +143,19 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
   const needsPartner = selectedDoubles
 
   function toggleEvent(id) {
+    const ev = available.find(e => e.id === id)
+    if (ev && ev.max_teams !== null && ev.max_teams !== undefined) {
+      const currentCount = eventPlayerCounts[ev.id] || 0
+      if (currentCount >= ev.max_teams) {
+        const label = DISCIPLINE_LABELS[ev.discipline] || ev.name
+        setLimitWarning({
+          eventName: label,
+          maxTeams: ev.max_teams
+        })
+        return
+      }
+    }
+
     setSelected(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
@@ -171,6 +210,18 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
   async function handleSubmit() {
     if (selected.size === 0) return
     setError(null)
+
+    // Validate max_teams limit
+    for (const eventId of selected) {
+      const ev = available.find(e => e.id === eventId)
+      if (ev && ev.max_teams !== null) {
+        const currentCount = eventPlayerCounts[ev.id] || 0
+        if (currentCount >= ev.max_teams) {
+          setError(`Nội dung "${DISCIPLINE_LABELS[ev.discipline] || ev.name}" đã đạt số lượng tối đa.`)
+          return
+        }
+      }
+    }
 
     // Validate custom required fields
     for (const eventId of selected) {
@@ -304,38 +355,61 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
                     const ageLabel = e.age_category && e.age_category !== 'open'
                       ? getAgeCategoryLabel(e.age_category)
                       : null
+                    const currentCount = eventPlayerCounts[e.id] || 0
+                    const isFull = e.max_teams !== null && currentCount >= e.max_teams
+
                     return (
                       <button
                         key={e.id}
                         onClick={() => toggleEvent(e.id)}
                         className={cn(
                           'w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-colors',
-                          checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300',
+                          checked 
+                            ? 'border-blue-500 bg-blue-50' 
+                            : isFull 
+                            ? 'border-gray-100 bg-gray-50/50 cursor-not-allowed opacity-80' 
+                            : 'border-gray-200 hover:border-gray-300',
                         )}
                       >
                         <span className="text-xl">{DISCIPLINE_ICONS[e.discipline] ?? '🏸'}</span>
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-gray-800 block">
+                          <span className={cn(
+                            'text-sm font-medium block',
+                            isFull ? 'text-gray-400' : 'text-gray-800'
+                          )}>
                             {DISCIPLINE_LABELS[e.discipline] ?? e.name}
                           </span>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {doubles && (
-                              <span className="text-xs text-orange-500">Yêu cầu thông tin partner</span>
-                            )}
-                            {ageLabel && (
-                              <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
-                                {ageLabel}
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {isFull ? (
+                              <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">
+                                Đầy chỗ (Tối đa {e.max_teams})
                               </span>
+                            ) : (
+                              <>
+                                {doubles && (
+                                  <span className="text-xs text-orange-500">Yêu cầu thông tin partner</span>
+                                )}
+                                {ageLabel && (
+                                  <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+                                    {ageLabel}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
                         <div className={cn(
                           'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
-                          checked ? 'border-blue-500 bg-blue-500' : 'border-gray-300',
+                          checked ? 'border-blue-500 bg-blue-500' : isFull ? 'border-gray-200 bg-gray-100' : 'border-gray-300',
                         )}>
                           {checked && (
                             <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
                               <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                          {isFull && (
+                            <svg className="w-2.5 h-2.5 text-gray-400" fill="none" viewBox="0 0 12 12">
+                              <path d="M2 2l8 8M10 2L2 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                             </svg>
                           )}
                         </div>
@@ -504,6 +578,29 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
           </div>
         )}
       </div>
+
+      {/* Limit Warning Modal */}
+      {limitWarning && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all p-6">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-gray-900">Nội dung đã đầy</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Nội dung <strong>{limitWarning.eventName}</strong> đã đạt số lượng giới hạn đăng ký tối đa ({limitWarning.maxTeams} đội/VĐV). Vui lòng chọn nội dung khác hoặc liên hệ Ban tổ chức.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setLimitWarning(null)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Đồng ý
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
