@@ -14,21 +14,26 @@ export default function EventPlayersPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
 
-  const [tournament, setTournament] = useState(null)
-  const [event, setEvent]           = useState(null)
-  const [players, setPlayers]       = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
+  const [tournament, setTournament]   = useState(null)
+  const [event, setEvent]             = useState(null)
+  const [players, setPlayers]         = useState([])
+  const [registrations, setRegs]      = useState([])  // for custom field display
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(null)
   const [playerCount, setPlayerCount] = useState(0)
 
   async function fetchData() {
     setLoading(true)
     setError(null)
     try {
-      const [tRes, eRes, pRes] = await Promise.all([
+      const [tRes, eRes, pRes, rRes] = await Promise.all([
         supabase.from('tournaments').select('id, name, creator_id').eq('id', tournamentId).single(),
         supabase.from('events').select('*').eq('id', eventId).single(),
         supabase.from('players').select('*').eq('event_id', eventId).order('created_at'),
+        supabase.from('tournament_registrations')
+          .select('id, athlete_id, status, custom_field_values, profiles(name, club)')
+          .eq('event_id', eventId)
+          .order('created_at'),
       ])
       if (tRes.error) throw tRes.error
       if (eRes.error) throw eRes.error
@@ -36,6 +41,7 @@ export default function EventPlayersPage() {
       setEvent(eRes.data)
       setPlayers(pRes.data || [])
       setPlayerCount((pRes.data || []).length)
+      setRegs(rRes.data || [])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -146,6 +152,62 @@ export default function EventPlayersPage() {
             requirePlayerCode={event.require_player_code ?? false}
             onImportComplete={handleImportComplete}
           />
+        </div>
+      )}
+
+      {/* Custom field responses — shown when event has custom fields */}
+      {canEdit && event.custom_fields?.length > 0 && registrations.length > 0 && (
+        <div className="mt-4 bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-800">Thông tin đăng ký bổ sung</h3>
+            <span className="text-xs text-gray-400">{registrations.length} đơn</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-2 text-gray-500 font-medium">VĐV</th>
+                  <th className="text-left px-4 py-2 text-gray-500 font-medium">Trạng thái</th>
+                  {event.custom_fields.map(f => (
+                    <th key={f.id} className="text-left px-4 py-2 text-gray-500 font-medium whitespace-nowrap">
+                      {f.label}{f.required && ' *'}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {registrations.map(reg => {
+                  const vals = reg.custom_field_values ?? {}
+                  const statusColor = reg.status === 'approved'
+                    ? 'text-green-600' : reg.status === 'rejected'
+                    ? 'text-red-500' : 'text-yellow-600'
+                  return (
+                    <tr key={reg.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-gray-800">{reg.profiles?.name ?? '—'}</p>
+                        {reg.profiles?.club && <p className="text-gray-400">{reg.profiles.club}</p>}
+                      </td>
+                      <td className={`px-4 py-2 font-medium ${statusColor}`}>
+                        {reg.status === 'approved' ? 'Đã duyệt'
+                          : reg.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                      </td>
+                      {event.custom_fields.map(f => {
+                        const val = vals[f.id]
+                        return (
+                          <td key={f.id} className="px-4 py-2 text-gray-700">
+                            {f.type === 'checkbox'
+                              ? (val ? '✓' : '–')
+                              : (val ?? <span className="text-gray-300">–</span>)
+                            }
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

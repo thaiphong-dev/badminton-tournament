@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Header from '@/components/layout/Header'
@@ -5,56 +6,76 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import IncomingCallOverlay from '@/components/umpire/IncomingCallOverlay'
 import { useAuth } from '@/lib/hooks/useAuth'
 import useCallStore from '@/lib/stores/callStore'
-
-// Auth pages (standalone, no header)
-import LoginPage       from '@/pages/LoginPage'
-import RegisterPage    from '@/pages/RegisterPage'
-import UnauthorizedPage from '@/pages/UnauthorizedPage'
-
-// Umpire pages (full-screen dark, no header)
-import UmpirePage      from '@/pages/UmpirePage'
-import UmpireMatchPage from '@/pages/UmpireMatchPage'
-
-// Athlete portal
-import AthleteDashboard     from '@/pages/AthleteDashboard'
-import AdminDashboard       from '@/pages/AdminDashboard'
-
-// Main app pages
-import Home                 from '@/pages/Home'
-import TournamentCreate     from '@/pages/TournamentCreate'
-import TournamentEdit       from '@/pages/TournamentEdit'
-import TournamentOverview   from '@/pages/TournamentOverview'
-import TournamentSetup      from '@/pages/TournamentSetup'
-import EventSetup           from '@/pages/EventSetup'
-import EventPlayersPage     from '@/pages/EventPlayersPage'
-import GroupStagePage       from '@/pages/GroupStagePage'
-import KnockoutPage         from '@/pages/KnockoutPage'
-import ResultsPage          from '@/pages/ResultsPage'
-import TournamentResultsPage from '@/pages/TournamentResultsPage'
-import TournamentReportPage  from '@/pages/TournamentReportPage'
-import AttendancePage        from '@/pages/AttendancePage'
-import PlansPage                  from '@/pages/PlansPage'
-import CheckoutPage               from '@/pages/CheckoutPage'
-import CreatorSubscriptionPage    from '@/pages/CreatorSubscriptionPage'
-import CreatorAnalyticsPage       from '@/pages/CreatorAnalyticsPage'
-import LeaderboardPage            from '@/pages/LeaderboardPage'
-import AddOnShopPage              from '@/pages/AddOnShopPage'
-import ProfilePage                from '@/pages/ProfilePage'
-import ScoreboardDisplay          from '@/pages/ScoreboardDisplay'
-import TournamentLivePage         from '@/pages/TournamentLivePage'
-import PlayerStatsPage            from '@/pages/PlayerStatsPage'
-import TournamentCourtsPage       from '@/pages/TournamentCourtsPage'
-import PlayerProfilePage          from '@/pages/PlayerProfilePage'
-import PublicBracketPage          from '@/pages/PublicBracketPage'
-import PrivacyPage                from '@/pages/PrivacyPage'
-import TermsPage                  from '@/pages/TermsPage'
-import FeaturesPage               from '@/pages/FeaturesPage'
 import ErrorBoundary              from '@/components/ErrorBoundary'
 import { PlanProvider }           from '@/lib/hooks/usePlan'
 import { LangProvider }           from '@/i18n'
 import Toaster                    from '@/components/ui/Toaster'
 import OfflineBanner              from '@/components/ui/OfflineBanner'
 import PwaPromptModal             from '@/components/ui/PwaPromptModal'
+
+// ── Always-on pages (auth flow + core shell) ────────────────────────────────
+// Kept eager because they're always reachable from any entry point.
+import LoginPage        from '@/pages/LoginPage'
+import RegisterPage     from '@/pages/RegisterPage'
+import UnauthorizedPage from '@/pages/UnauthorizedPage'
+import Home             from '@/pages/Home'
+import TournamentOverview from '@/pages/TournamentOverview'
+
+// ── Lazy-loaded pages ─────────────────────────────────────────────────────────
+// Each lazy() call creates a separate async chunk; the browser only downloads
+// the chunk when a user actually navigates to that route.
+
+// Umpire (full-screen, separate session context)
+const UmpirePage      = lazy(() => import('@/pages/UmpirePage'))
+const UmpireMatchPage = lazy(() => import('@/pages/UmpireMatchPage'))
+
+// Athlete portal
+const AthleteDashboard = lazy(() => import('@/pages/AthleteDashboard'))
+
+// Admin
+const AdminDashboard   = lazy(() => import('@/pages/AdminDashboard'))
+
+// Creator management (heavy — form-heavy pages, chart deps)
+const TournamentCreate        = lazy(() => import('@/pages/TournamentCreate'))
+const TournamentEdit          = lazy(() => import('@/pages/TournamentEdit'))
+const TournamentSetup         = lazy(() => import('@/pages/TournamentSetup'))
+const EventSetup              = lazy(() => import('@/pages/EventSetup'))
+const EventPlayersPage        = lazy(() => import('@/pages/EventPlayersPage'))
+const AttendancePage          = lazy(() => import('@/pages/AttendancePage'))
+const GroupStagePage          = lazy(() => import('@/pages/GroupStagePage'))
+const KnockoutPage            = lazy(() => import('@/pages/KnockoutPage'))
+const TournamentReportPage    = lazy(() => import('@/pages/TournamentReportPage'))
+const CreatorAnalyticsPage    = lazy(() => import('@/pages/CreatorAnalyticsPage'))
+const CreatorSubscriptionPage = lazy(() => import('@/pages/CreatorSubscriptionPage'))
+const AddOnShopPage           = lazy(() => import('@/pages/AddOnShopPage'))
+const CheckoutPage            = lazy(() => import('@/pages/CheckoutPage'))
+const PlansPage               = lazy(() => import('@/pages/PlansPage'))
+
+// Results + public pages
+const ResultsPage          = lazy(() => import('@/pages/ResultsPage'))
+const TournamentResultsPage = lazy(() => import('@/pages/TournamentResultsPage'))
+const LeaderboardPage      = lazy(() => import('@/pages/LeaderboardPage'))
+const ScoreboardDisplay    = lazy(() => import('@/pages/ScoreboardDisplay'))
+const TournamentLivePage   = lazy(() => import('@/pages/TournamentLivePage'))
+const PlayerStatsPage      = lazy(() => import('@/pages/PlayerStatsPage'))
+const TournamentCourtsPage = lazy(() => import('@/pages/TournamentCourtsPage'))
+const PlayerProfilePage    = lazy(() => import('@/pages/PlayerProfilePage'))
+const PublicBracketPage    = lazy(() => import('@/pages/PublicBracketPage'))
+
+// Misc
+const ProfilePage  = lazy(() => import('@/pages/ProfilePage'))
+const PrivacyPage  = lazy(() => import('@/pages/PrivacyPage'))
+const TermsPage    = lazy(() => import('@/pages/TermsPage'))
+const FeaturesPage = lazy(() => import('@/pages/FeaturesPage'))
+
+// ── Page loader fallback ──────────────────────────────────────────────────────
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh]">
+      <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+    </div>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, refetchOnWindowFocus: true } },
@@ -84,12 +105,16 @@ function AppShell() {
     <>
       <Route path="/umpire" element={
         <ProtectedRoute allowedRoles={['umpire']}>
-          <UmpirePage />
+          <Suspense fallback={<PageLoader />}>
+            <UmpirePage />
+          </Suspense>
         </ProtectedRoute>
       } />
       <Route path="/umpire/match/:matchId" element={
         <ProtectedRoute allowedRoles={['umpire']}>
-          <UmpireMatchPage />
+          <Suspense fallback={<PageLoader />}>
+            <UmpireMatchPage />
+          </Suspense>
         </ProtectedRoute>
       } />
     </>
@@ -111,6 +136,7 @@ function AppShell() {
         <div className="min-h-screen bg-gray-50">
           <Header />
           <main>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* ── Home ── */}
               <Route path="/" element={<Home />} />
@@ -248,6 +274,7 @@ function AppShell() {
 
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
           </main>
           {/* Daily PWA prompt — shown once per day for non-admin logged-in users */}
           <PwaPromptModal userId={profile?.id} role={profile?.role} />

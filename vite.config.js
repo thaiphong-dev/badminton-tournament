@@ -53,6 +53,24 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // rolldown requires manualChunks as a function (not an object)
+        manualChunks(id) {
+          if (id.includes('@supabase/supabase-js') || id.includes('node_modules/@supabase')) {
+            return 'vendor-supabase'
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-ui'
+          }
+          if (id.includes('node_modules/recharts')) {
+            return 'vendor-charts'
+          }
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

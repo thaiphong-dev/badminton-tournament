@@ -27,7 +27,7 @@ function genderLabel(allowed) {
   if (allowed?.length === 1) return allowed[0] === 'male' ? 'Nam' : 'Nữ'
   return 'Nam hoặc Nữ'
 }
-import { isTournamentComplete } from '@/lib/utils/eventHelpers'
+import { isTournamentComplete, isAgeEligible, AGE_CATEGORY_LABELS } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -82,6 +82,7 @@ export default function TournamentOverview() {
   const [myRegEventIds, setMyRegEventIds] = useState(new Set())
   const [showRegModal, setShowRegModal]   = useState(false)
   const [athleteGender, setAthleteGender] = useState(undefined) // undefined = not loaded yet
+  const [athleteDob,    setAthleteDob]    = useState(undefined) // undefined = not loaded yet
 
   useEffect(() => {
     fetchData(true)
@@ -126,10 +127,13 @@ export default function TournamentOverview() {
     if (!profile?.id || profile.role !== 'athlete') return
     supabase
       .from('profiles')
-      .select('gender')
+      .select('gender, date_of_birth')
       .eq('id', profile.id)
       .single()
-      .then(({ data }) => setAthleteGender(data?.gender ?? null))
+      .then(({ data }) => {
+        setAthleteGender(data?.gender ?? null)
+        setAthleteDob(data?.date_of_birth ?? null)
+      })
   }, [profile?.id, profile?.role])
 
   async function fetchData(showLoading = true) {
@@ -206,11 +210,17 @@ export default function TournamentOverview() {
   const isAthlete      = profile?.role === 'athlete'
   const canRegister    = isAthlete && tournament?.registration_open && tournament.status !== 'completed'
   const alreadyRegAll  = canRegister && events.length > 0 && events.every(e => myRegEventIds.has(e.id))
-  const allRemainingBlocked = canRegister && athleteGender != null && events.length > 0
+  const allRemainingBlocked = canRegister && events.length > 0
     && events.filter(e => !myRegEventIds.has(e.id)).length > 0
     && events.filter(e => !myRegEventIds.has(e.id)).every(e => {
-      const allowed = GENDER_RULES[e.discipline]
-      return allowed && !allowed.includes(athleteGender)
+      // blocked by gender
+      if (athleteGender != null) {
+        const allowed = GENDER_RULES[e.discipline]
+        if (allowed && !allowed.includes(athleteGender)) return true
+      }
+      // blocked by age
+      if (!isAgeEligible(athleteDob ?? null, e.age_category)) return true
+      return false
     })
   const isSuspended    = !!tournament?.is_suspended
   const canUseUmpire   = role === 'admin' || hasFeature('umpire_assign')
@@ -439,15 +449,23 @@ export default function TournamentOverview() {
 
           <div className="space-y-1.5 mb-4">
             {events.map(ev => {
-              const registered = myRegEventIds.has(ev.id)
+              const registered     = myRegEventIds.has(ev.id)
               const allowedGenders = GENDER_RULES[ev.discipline]
-              const genderBlocked = athleteGender !== undefined && athleteGender !== null
+              const genderBlocked  = athleteGender !== undefined && athleteGender !== null
                 && allowedGenders && !allowedGenders.includes(athleteGender)
+              const ageBlocked     = !isAgeEligible(athleteDob ?? null, ev.age_category)
+              const ageLabel       = ev.age_category && ev.age_category !== 'open'
+                ? AGE_CATEGORY_LABELS[ev.age_category] : null
               return (
                 <div key={ev.id} className="flex items-center justify-between py-1">
                   <span className="text-sm text-gray-700 flex items-center gap-1.5">
                     <span>{DISCIPLINE_ICONS[ev.discipline] ?? '🏸'}</span>
                     {DISCIPLINE_LABELS[ev.discipline] ?? ev.name}
+                    {ageLabel && (
+                      <span className="text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
+                        {ageLabel}
+                      </span>
+                    )}
                   </span>
                   {registered ? (
                     <span className="text-xs text-green-600 flex items-center gap-1">
@@ -456,6 +474,10 @@ export default function TournamentOverview() {
                   ) : genderBlocked ? (
                     <span className="text-xs text-gray-400 italic">
                       Dành cho {genderLabel(allowedGenders)}
+                    </span>
+                  ) : ageBlocked && !registered ? (
+                    <span className="text-xs text-gray-400 italic">
+                      {athleteDob === null ? 'Cần ngày sinh' : 'Không đủ tuổi'}
                     </span>
                   ) : null}
                 </div>
@@ -467,8 +489,8 @@ export default function TournamentOverview() {
               onClick={() => setShowRegModal(true)}
               disabled={alreadyRegAll || athleteGender === null || allRemainingBlocked}
               title={
-                athleteGender === null ? 'Cập nhật giới tính trong hồ sơ trước'
-                : allRemainingBlocked ? 'Không có nội dung phù hợp giới tính của bạn'
+                athleteGender === null      ? 'Cập nhật giới tính trong hồ sơ trước'
+                : allRemainingBlocked       ? 'Không có nội dung phù hợp'
                 : undefined
               }
               className={cn(
@@ -478,7 +500,7 @@ export default function TournamentOverview() {
                   : 'bg-blue-600 text-white hover:bg-blue-700',
               )}
             >
-              {alreadyRegAll ? 'Đã đăng ký tất cả nội dung'
+              {alreadyRegAll          ? 'Đã đăng ký tất cả nội dung'
                 : allRemainingBlocked ? 'Không có nội dung phù hợp'
                 : '+ Đăng ký tham gia'}
             </button>
@@ -501,6 +523,7 @@ export default function TournamentOverview() {
           athleteName={profile.name}
           existingEventIds={myRegEventIds}
           athleteGender={athleteGender}
+          athleteDob={athleteDob}
           onClose={() => setShowRegModal(false)}
           onSuccess={() => {
             setShowRegModal(false)

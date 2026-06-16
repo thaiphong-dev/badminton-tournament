@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, User, Loader2, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, Save, AlertCircle } from 'lucide-react'
+import { CalendarDays, User, Loader2, CheckCircle2, Clock, ChevronRight, Save, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
@@ -9,12 +9,34 @@ import { showToast } from '@/lib/hooks/useApiError'
 import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
 import { useI18n } from '@/i18n'
 
+// ── Module-level constants ────────────────────────────────────────────────────
+
+const TABS = [
+  { id: 'mine',    label: 'Đăng ký của tôi', icon: CalendarDays },
+  { id: 'matches', label: 'Lịch thi đấu',    icon: Clock },
+  { id: 'profile', label: 'Hồ sơ',           icon: User },
+]
+
+const STATUS_BADGE = {
+  pending:  { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
+  approved: { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
+  rejected: { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
+}
+
+const STAGE_LABELS = {
+  group: 'Vòng bảng', round_of_16: '1/8', quarter: 'Tứ kết',
+  semi: 'Bán kết', final: 'Chung kết', third_place: 'Hạng 3',
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function AthleteDashboard() {
   const { profile } = useAuth()
   const { t } = useI18n()
   const [tab, setTab]               = useState('mine')
   const [newNotifCount, setNewNotifCount] = useState(0)
-  const mountKey = useRef(Date.now())
+  const mountKey          = useRef(Date.now())
+  const athletePlayerIds  = useRef(new Set())
 
   // NR5: Realtime đăng ký được duyệt/từ chối
   useEffect(() => {
@@ -69,8 +91,7 @@ export default function AthleteDashboard() {
           }
         }
 
-        // 1 channel per player ID, filter trên player1_id và player2_id riêng
-        playerIds.forEach((pid, i) => {
+        playerIds.forEach(pid => {
           const ch1 = supabase.channel(`athlete-mp1-${pid}-${mountKey.current}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player1_id=eq.${pid}` }, handleMatchUpdate)
             .subscribe()
@@ -107,22 +128,22 @@ export default function AthleteDashboard() {
 
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 mb-6">
-        {TABS.map(t => {
-          const Icon = t.icon
+        {TABS.map(tb => {
+          const Icon = tb.icon
           return (
             <button
-              key={t.id}
-              onClick={() => switchTab(t.id)}
+              key={tb.id}
+              onClick={() => switchTab(tb.id)}
               className={cn(
-                'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
-                tab === t.id
+                'flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === tb.id
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
               <Icon className="w-4 h-4" />
-              {t.label}
-              {t.id === 'mine' && newNotifCount > 0 && (
+              {tb.label}
+              {tb.id === 'mine' && newNotifCount > 0 && (
                 <span className="ml-1 bg-red-500 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none">
                   {newNotifCount}
                 </span>
@@ -133,218 +154,197 @@ export default function AthleteDashboard() {
       </div>
 
       {tab === 'mine'    && <MyRegistrationsTab profile={profile} />}
+      {tab === 'matches' && <MatchScheduleTab profile={profile} />}
       {tab === 'profile' && <ProfileTab profile={profile} />}
-
     </div>
   )
 }
 
-// ── Tab: Giải đấu (removed — athletes browse tournaments from Home / TournamentOverview)
+// ── Tab: Lịch thi đấu ────────────────────────────────────────────────────────
 
-function OpenTournamentsTab({ profile }) {
-  const [tournaments, setTournaments] = useState([])
-  const [total, setTotal]             = useState(0)
-  const [page, setPage]               = useState(1)
-  const [myRegIds, setMyRegIds]       = useState(new Set())
-  const [loading, setLoading]         = useState(true)
-  const [registerFor, setRegisterFor] = useState(null)
+function MatchScheduleTab({ profile }) {
+  const [playerList, setPlayerList] = useState([])
+  const [matches, setMatches]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const mountKey = useRef(Date.now())
 
-  async function load(p) {
-    setLoading(true)
-    const from = (p - 1) * ATHLETE_PAGE_SIZE
-    const to   = from + ATHLETE_PAGE_SIZE - 1
+  async function load() {
     try {
-      const [tRes, rRes] = await Promise.all([
-        supabase
-          .from('tournaments')
-          .select('*, events(id, name, discipline, status)', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .range(from, to),
-        supabase
-          .from('tournament_registrations')
-          .select('event_id')
-          .eq('athlete_id', profile.id),
-      ])
-      if (tRes.error) throw tRes.error
-      setTournaments(tRes.data || [])
-      setTotal(tRes.count ?? 0)
-      setMyRegIds(new Set((rRes.data || []).map(r => r.event_id)))
+      const { data: playerData, error: pErr } = await supabase
+        .from('players')
+        .select('id, event_id, tournament_id')
+        .eq('athlete_id', profile.id)
+      if (pErr) throw pErr
+      if (!playerData?.length) { setLoading(false); return }
+
+      setPlayerList(playerData)
+      const idList = playerData.map(p => p.id).join(',')
+
+      const { data: matchData, error: mErr } = await supabase
+        .from('matches')
+        .select(`
+          id, player1_id, player2_id, event_id, tournament_id,
+          stage, match_number, status,
+          player1_scores, player2_scores, winner_id,
+          court_number, wave_number,
+          p1:players!player1_id(id, name),
+          p2:players!player2_id(id, name),
+          tournament:tournaments!tournament_id(id, name),
+          event:events!event_id(id, name, discipline)
+        `)
+        .or(`player1_id.in.(${idList}),player2_id.in.(${idList})`)
+        .order('wave_number', { nullsFirst: false })
+        .order('match_number')
+      if (mErr) throw mErr
+
+      const myIds = new Set(playerData.map(p => p.id))
+      setMatches((matchData || []).map(m => ({
+        ...m,
+        myPlayerId: myIds.has(m.player1_id) ? m.player1_id : m.player2_id,
+      })))
     } catch (err) {
-      console.error('[AthleteDashboard] load tournaments:', err)
-      showToast('Không thể tải danh sách giải đấu. Vui lòng thử lại.')
+      console.error('[MatchScheduleTab] load:', err)
+      showToast('Không thể tải lịch thi đấu.', 'error')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { startTransition(() => { load(page) }) }, [page, profile.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    startTransition(() => { load() })
+  }, [profile.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleRegistered() {
-    setRegisterFor(null)
-    supabase
-      .from('tournament_registrations')
-      .select('event_id')
-      .eq('athlete_id', profile.id)
-      .then(({ data }) => setMyRegIds(new Set((data || []).map(r => r.event_id))))
-  }
-
-  const totalPages = Math.ceil(total / ATHLETE_PAGE_SIZE)
+  // Realtime: patch match row in-place on score / status update
+  useEffect(() => {
+    if (!playerList.length) return
+    const channels = []
+    playerList.forEach(({ id: pid }) => {
+      const patchMatch = payload =>
+        setMatches(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
+      const c1 = supabase.channel(`ms-p1-${pid}-${mountKey.current}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player1_id=eq.${pid}` }, patchMatch)
+        .subscribe()
+      const c2 = supabase.channel(`ms-p2-${pid}-${mountKey.current}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `player2_id=eq.${pid}` }, patchMatch)
+        .subscribe()
+      channels.push(c1, c2)
+    })
+    return () => channels.forEach(ch => supabase.removeChannel(ch))
+  }, [playerList.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <LoadingBox />
 
-  if (total === 0) {
+  if (!matches.length) {
     return (
       <EmptyBox
-        icon={Trophy}
-        title="Chưa có giải đấu nào"
-        desc="Kiểm tra lại sau khi ban tổ chức tạo giải mới."
+        icon={Clock}
+        title="Chưa có trận đấu nào"
+        desc="Trận đấu sẽ xuất hiện tại đây khi Ban tổ chức xếp lịch."
       />
     )
   }
 
+  const calling = matches.filter(m => m.status === 'calling' || m.status === 'active')
+  const pending = matches.filter(m => m.status === 'pending')
+  const done    = matches.filter(m => m.status === 'completed')
+
   return (
-    <div className="space-y-4">
-      {tournaments.map(t => {
-        const events     = t.events || []
-        const st         = athleteStatus(t)
-        const canRegister = t.registration_open && t.status !== 'completed'
-        const alreadyAll = events.length > 0 && events.every(e => myRegIds.has(e.id))
-        const isDone     = t.status === 'completed'
-
-        return (
-          <div key={t.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            {/* Header */}
-            <div className="px-5 pt-4 pb-3 border-b border-gray-100">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-gray-900 text-base truncate">{t.name}</h3>
-                  <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5 flex-wrap">
-                    {t.location && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />{t.location}
-                      </span>
-                    )}
-                    {t.start_date && (
-                      <span className="flex items-center gap-1">
-                        <CalendarDays className="w-3 h-3" />
-                        {new Date(t.start_date).toLocaleDateString('vi-VN')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium shrink-0', st.color)}>
-                  {st.label}
-                </span>
-              </div>
-            </div>
-
-            {/* Events list */}
-            {events.length === 0 ? (
-              <p className="px-5 py-3 text-xs text-gray-400 italic">Chưa có nội dung thi đấu.</p>
-            ) : (
-              <div className="px-5 py-3 space-y-1.5">
-                {events.map(e => {
-                  const registered = myRegIds.has(e.id)
-                  return (
-                    <div key={e.id} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                        <span>{DISCIPLINE_ICONS[e.discipline] ?? '🏸'}</span>
-                        {DISCIPLINE_LABELS[e.discipline] ?? e.name}
-                      </span>
-                      {registered && (
-                        <span className="text-xs text-green-600 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Đã đăng ký
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* CTA row */}
-            {events.length > 0 && (
-              <div className="px-5 pb-4 flex gap-2">
-                {isDone ? (
-                  <a
-                    href={`/tournament/${t.id}/results`}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-center bg-yellow-50 text-yellow-700 hover:bg-yellow-100 transition-colors border border-yellow-200"
-                  >
-                    🏆 Xem kết quả
-                  </a>
-                ) : canRegister ? (
-                  <button
-                    onClick={() => setRegisterFor({ tournament: t, events })}
-                    disabled={alreadyAll}
-                    className={cn(
-                      'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors',
-                      alreadyAll
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700',
-                    )}
-                  >
-                    {alreadyAll ? 'Đã đăng ký tất cả' : '+ Đăng ký tham gia'}
-                  </button>
-                ) : (
-                  <div className="flex-1 py-2.5 rounded-xl text-sm text-center text-gray-400 bg-gray-50">
-                    {t.status === 'group_stage' || t.status === 'knockout'
-                      ? 'Giải đang diễn ra'
-                      : 'Chưa mở đăng ký'}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <AthletePagination page={page} totalPages={totalPages} onChange={p => setPage(p)} />
+    <div className="space-y-5">
+      {calling.length > 0 && (
+        <MatchGroup title="🏸 Đang thi đấu" count={calling.length} matches={calling} />
       )}
-
-      {registerFor && (
-        <RegistrationModal
-          tournament={registerFor.tournament}
-          events={registerFor.events}
-          athleteId={profile.id}
-          existingEventIds={myRegIds}
-          onClose={() => setRegisterFor(null)}
-          onSuccess={handleRegistered}
-        />
+      {pending.length > 0 && (
+        <MatchGroup title="⏳ Sắp thi đấu" count={pending.length} matches={pending} />
+      )}
+      {done.length > 0 && (
+        <MatchGroup title="✅ Đã thi đấu" count={done.length} matches={done} collapsible />
       )}
     </div>
   )
 }
 
-function AthletePagination({ page, totalPages, onChange }) {
+function MatchGroup({ title, count, matches, collapsible = false }) {
+  const [open, setOpen] = useState(!collapsible)
   return (
-    <div className="flex items-center justify-center gap-2 pt-2">
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
       <button
-        onClick={() => onChange(page - 1)}
-        disabled={page === 1}
-        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        onClick={() => collapsible && setOpen(o => !o)}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3 text-left',
+          collapsible && 'hover:bg-gray-50 transition-colors',
+        )}
       >
-        ‹ Trước
+        <span className="font-semibold text-sm text-gray-800">{title} ({count})</span>
+        {collapsible && (
+          <ChevronRight className={cn('w-4 h-4 text-gray-400 transition-transform shrink-0', open && 'rotate-90')} />
+        )}
       </button>
-      <span className="text-sm text-gray-500">{page} / {totalPages}</span>
-      <button
-        onClick={() => onChange(page + 1)}
-        disabled={page === totalPages}
-        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        Tiếp ›
-      </button>
+      {open && (
+        <div className="divide-y divide-gray-100 border-t border-gray-100">
+          {matches.map(m => <MatchRow key={m.id} match={m} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MatchRow({ match: m }) {
+  const isP1     = m.myPlayerId === m.player1_id
+  const opponent = isP1 ? m.p2 : m.p1
+  const myScores = isP1 ? m.player1_scores : m.player2_scores
+  const opScores = isP1 ? m.player2_scores : m.player1_scores
+  const iWon     = m.status === 'completed' && m.winner_id === m.myPlayerId
+  const live     = m.status === 'active'
+  const calling  = m.status === 'calling'
+  const done     = m.status === 'completed'
+  const scoreStr = done && myScores?.length
+    ? myScores.map((s, i) => `${s}–${opScores?.[i] ?? 0}`).join('  ')
+    : null
+
+  return (
+    <div className={cn(
+      'px-4 py-3',
+      calling && 'bg-blue-50/60',
+      iWon && done && 'bg-green-50/40',
+    )}>
+      <p className="text-[11px] text-gray-400 mb-0.5 truncate">
+        {m.tournament?.name ?? '—'} · {DISCIPLINE_LABELS[m.event?.discipline] ?? m.event?.name ?? '—'}
+      </p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-gray-500">
+            {STAGE_LABELS[m.stage] ?? m.stage}
+            {m.match_number ? ` · #${m.match_number}` : ''}
+            {m.court_number != null && !done && (
+              <span className="ml-1.5 text-blue-500 font-medium">
+                Sân {m.court_number}{m.wave_number != null ? ` · Lượt ${m.wave_number}` : ''}
+              </span>
+            )}
+          </p>
+          <p className={cn('text-sm font-semibold truncate mt-0.5', iWon ? 'text-green-700' : 'text-gray-800')}>
+            vs {opponent?.name ?? 'TBD'}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          {calling && <span className="text-xs font-bold text-blue-600 animate-pulse block">📞 Vào sân!</span>}
+          {live && !calling && <span className="text-xs font-bold text-red-500 animate-pulse block">● LIVE</span>}
+          {done && scoreStr && (
+            <span className={cn('text-sm font-mono font-bold', iWon ? 'text-green-600' : 'text-gray-500')}>
+              {scoreStr}
+            </span>
+          )}
+          {!done && !live && !calling && m.court_number == null && (
+            <span className="text-xs text-gray-400 flex items-center gap-1 justify-end">
+              <Clock className="w-3 h-3" /> Chờ xếp lịch
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
 // ── Tab: Của tôi ──────────────────────────────────────────────────────────────
-
-const STAGE_LABELS = {
-  group: 'Vòng bảng', round_of_16: '1/8', quarter: 'Tứ kết',
-  semi: 'Bán kết', final: 'Chung kết', third_place: 'Hạng 3',
-}
 
 function MyRegistrationsTab({ profile }) {
   const [regs, setRegs]         = useState([])

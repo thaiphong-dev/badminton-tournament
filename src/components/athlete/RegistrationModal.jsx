@@ -3,8 +3,69 @@ import { X, Loader2, CheckCircle2, AlertCircle, Search, UserCheck } from 'lucide
 import { supabase } from '@/lib/supabase'
 import { sendPush } from '@/lib/utils/sendPush'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
-import { isDoublesDiscipline } from '@/lib/utils/eventHelpers'
+import { isDoublesDiscipline, isAgeEligible, AGE_CATEGORY_LABELS } from '@/lib/utils/eventHelpers'
 import { cn } from '@/lib/utils/cn'
+
+// ── Custom field renderer for athlete registration ─────────────────────────────
+
+function CustomFieldInput({ field, value, onChange }) {
+  const required = field.required
+
+  if (field.type === 'checkbox') {
+    return (
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={!!value}
+          onChange={e => onChange(e.target.checked)}
+          className="rounded border-gray-300 mt-0.5 shrink-0"
+        />
+        <span className="text-sm text-gray-700">
+          {field.label}
+          {required && <span className="text-red-500 ml-0.5">*</span>}
+        </span>
+      </label>
+    )
+  }
+
+  if (field.type === 'select') {
+    const options = field.options ?? []
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {field.label}{required && <span className="text-red-500 ml-0.5">*</span>}
+        </label>
+        <select
+          value={value ?? ''}
+          onChange={e => onChange(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">-- Chọn --</option>
+          {options.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+
+  // Default: text
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {field.label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      <input
+        type="text"
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value)}
+        placeholder={field.label}
+        maxLength={200}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  )
+}
 
 const GENDER_RULES = {
   singles_men:   ['male'],
@@ -18,8 +79,9 @@ const GENDER_RULES = {
  * Modal cho athlete đăng ký nội dung trong giải đấu.
  * Doubles events → yêu cầu thông tin partner.
  */
-export default function RegistrationModal({ tournament, events, athleteId, athleteName, existingEventIds, athleteGender, onClose, onSuccess }) {
+export default function RegistrationModal({ tournament, events, athleteId, athleteName, existingEventIds, athleteGender, athleteDob, onClose, onSuccess }) {
   const [selected, setSelected]         = useState(new Set())
+  const [customValues, setCustomValues] = useState({})  // { [eventId]: { [fieldId]: value } }
   const [note, setNote]                 = useState('')
   const [saving, setSaving]             = useState(false)
   const [done, setDone]                 = useState(false)
@@ -33,13 +95,21 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
   const [partnerName, setPartnerName]   = useState('')
   const [partnerClub, setPartnerClub]   = useState('')
 
-  const available      = events.filter(e => {
+  const available = events.filter(e => {
     if (existingEventIds.has(e.id)) return false
-    if (!athleteGender) return true
-    const allowed = GENDER_RULES[e.discipline]
-    if (!allowed) return true
-    return allowed.includes(athleteGender)
+    // gender check
+    if (athleteGender) {
+      const allowed = GENDER_RULES[e.discipline]
+      if (allowed && !allowed.includes(athleteGender)) return false
+    }
+    // age check — if DOB unknown and event has restriction, hide event
+    if (!isAgeEligible(athleteDob ?? null, e.age_category)) return false
+    return true
   })
+
+  // True when events were hidden due to missing DOB (athlete hasn't set it yet)
+  const hasAgeRestrictedEvents = events.some(e => e.age_category && e.age_category !== 'open')
+  const dobMissingWarning = hasAgeRestrictedEvents && !athleteDob
   const selectedDoubles = [...selected].some(eid => {
     const ev = available.find(e => e.id === eid)
     return ev && isDoublesDiscipline(ev.discipline)
@@ -102,6 +172,22 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
     if (selected.size === 0) return
     setError(null)
 
+    // Validate custom required fields
+    for (const eventId of selected) {
+      const ev = available.find(e => e.id === eventId)
+      if (!ev?.custom_fields?.length) continue
+      const vals = customValues[eventId] ?? {}
+      for (const field of ev.custom_fields) {
+        if (!field.required) continue
+        const val = vals[field.id]
+        if (field.type === 'checkbox') {
+          if (!val) { setError(`Vui lòng xác nhận: "${field.label}"`); return }
+        } else {
+          if (!val || !String(val).trim()) { setError(`Vui lòng điền: "${field.label}"`); return }
+        }
+      }
+    }
+
     // Validate doubles partner
     if (needsPartner) {
       if (!partnerProfile) {
@@ -122,11 +208,12 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
       const ev = available.find(e => e.id === eventId)
       const doubles = ev && isDoublesDiscipline(ev.discipline)
       return {
-        tournament_id: tournament.id,
-        event_id:      eventId,
-        athlete_id:    athleteId,
-        status:        'pending',
-        note:          note.trim() || null,
+        tournament_id:        tournament.id,
+        event_id:             eventId,
+        athlete_id:           athleteId,
+        status:               'pending',
+        note:                 note.trim() || null,
+        custom_field_values:  customValues[eventId] ?? {},
         ...(doubles ? {
           partner_id:   partnerProfile?.id ?? null,
           partner_name: partnerProfile ? null : (partnerName.trim() || null),
@@ -196,6 +283,17 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
             </div>
           ) : (
             <>
+              {/* DOB missing warning */}
+              {dobMissingWarning && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    Một số nội dung có giới hạn tuổi bị ẩn vì hồ sơ của bạn chưa có ngày sinh.
+                    Cập nhật trong <a href="/profile" className="font-semibold underline">hồ sơ</a>.
+                  </span>
+                </div>
+              )}
+
               {/* Event selection */}
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">Chọn nội dung tham gia</p>
@@ -203,6 +301,9 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
                   {available.map(e => {
                     const checked  = selected.has(e.id)
                     const doubles  = isDoublesDiscipline(e.discipline)
+                    const ageLabel = e.age_category && e.age_category !== 'open'
+                      ? AGE_CATEGORY_LABELS[e.age_category]
+                      : null
                     return (
                       <button
                         key={e.id}
@@ -217,9 +318,16 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
                           <span className="text-sm font-medium text-gray-800 block">
                             {DISCIPLINE_LABELS[e.discipline] ?? e.name}
                           </span>
-                          {doubles && (
-                            <span className="text-xs text-orange-500">Yêu cầu thông tin partner</span>
-                          )}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {doubles && (
+                              <span className="text-xs text-orange-500">Yêu cầu thông tin partner</span>
+                            )}
+                            {ageLabel && (
+                              <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+                                {ageLabel}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className={cn(
                           'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
@@ -313,6 +421,34 @@ export default function RegistrationModal({ tournament, events, athleteId, athle
                   )}
                 </div>
               )}
+
+              {/* Custom fields for selected events */}
+              {[...selected].map(eventId => {
+                const ev = available.find(e => e.id === eventId)
+                if (!ev?.custom_fields?.length) return null
+                const vals = customValues[eventId] ?? {}
+                const setVal = (fieldId, value) => {
+                  setCustomValues(prev => ({
+                    ...prev,
+                    [eventId]: { ...(prev[eventId] ?? {}), [fieldId]: value },
+                  }))
+                }
+                return (
+                  <div key={eventId} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Thông tin bổ sung — {DISCIPLINE_LABELS[ev.discipline] ?? ev.name}
+                    </p>
+                    {ev.custom_fields.map(field => (
+                      <CustomFieldInput
+                        key={field.id}
+                        field={field}
+                        value={vals[field.id]}
+                        onChange={v => setVal(field.id, v)}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
 
               {/* Note */}
               <div>

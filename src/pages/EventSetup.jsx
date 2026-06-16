@@ -2,11 +2,11 @@ import { useEffect, useState, startTransition } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Settings, LayoutList, GitBranch, AlertCircle, CheckCircle,
-  ChevronRight, Loader2, Info, ClipboardList, Grid,
+  ChevronRight, Loader2, Info, ClipboardList, Grid, Plus, Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FORMAT_OPTIONS, FORMAT_LABELS } from '@/lib/constants'
-import { isValidBracketSize, nextPowerOfTwo } from '@/lib/utils/eventHelpers'
+import { isValidBracketSize, nextPowerOfTwo, AGE_CATEGORY_OPTIONS, ageCategoryHint } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -90,6 +90,69 @@ function ScoringRuleRow({ label, sets, pointsPerSet, onSetsChange, onPointsChang
   )
 }
 
+// ── Custom field row (inside EventSetup) ─────────────────────────────────────
+function CustomFieldRow({ field, onChange, onDelete }) {
+  const FIELD_TYPES = [
+    { value: 'text',     label: 'Văn bản tự do' },
+    { value: 'select',   label: 'Chọn một đáp án' },
+    { value: 'checkbox', label: 'Xác nhận (checkbox)' },
+  ]
+  return (
+    <div className="flex items-start gap-2 p-3 border border-gray-200 rounded-xl bg-gray-50/50">
+      <div className="flex-1 space-y-2 min-w-0">
+        <input
+          type="text"
+          value={field.label}
+          onChange={e => onChange({ ...field, label: e.target.value })}
+          placeholder="Tên trường (vd: Size áo, Xác nhận nội quy...)"
+          maxLength={60}
+          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={field.type}
+            onChange={e => onChange({ ...field, type: e.target.value, options: [] })}
+            className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {FIELD_TYPES.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={field.required}
+              onChange={e => onChange({ ...field, required: e.target.checked })}
+              className="rounded border-gray-300"
+            />
+            <span className="text-gray-600">Bắt buộc</span>
+          </label>
+        </div>
+        {field.type === 'select' && (
+          <input
+            type="text"
+            value={(field.options ?? []).join(', ')}
+            onChange={e => onChange({
+              ...field,
+              options: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
+            })}
+            placeholder="Các lựa chọn cách nhau bởi dấu phẩy: A, B, AB, O"
+            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        title="Xóa trường này"
+        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors shrink-0 mt-0.5"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function EventSetup() {
   const { id: tournamentId, eventId } = useParams()
@@ -121,6 +184,8 @@ export default function EventSetup() {
   const [lateSet, setLateSet]   = useState(3)
   const [latePts, setLatePts]   = useState(15)
   const [numCourts, setNumCourts] = useState(2)
+  const [ageCategory,        setAgeCategory]        = useState('open')
+  const [customFields,       setCustomFields]       = useState([])
   const [tiebreakerMode,     setTiebreakerMode]     = useState('bwf')
   const [scheduleStartTime,  setScheduleStartTime]  = useState('')
   const [waveDurationMins,   setWaveDurationMins]   = useState(45)
@@ -132,6 +197,8 @@ export default function EventSetup() {
     setNumSecond(ev.num_second_place_qualify ?? 0)
     setRequirePlayerCode(ev.require_player_code ?? false)
     setAttendanceEnabled(ev.attendance_enabled ?? false)
+    setAgeCategory(ev.age_category ?? 'open')
+    setCustomFields(ev.custom_fields ?? [])
     setTiebreakerMode(ev.tiebreaker_mode ?? 'bwf')
     setScheduleStartTime(ev.schedule_start_time ? ev.schedule_start_time.slice(0, 16) : '')
     setWaveDurationMins(ev.wave_duration_minutes ?? 45)
@@ -192,6 +259,8 @@ export default function EventSetup() {
           scoring_rules:             scoringRules,
           require_player_code:       requirePlayerCode,
           attendance_enabled:        attendanceEnabled,
+          age_category:              ageCategory,
+          custom_fields:             customFields,
           num_courts:                Number(numCourts),
           tiebreaker_mode:           tiebreakerMode,
           schedule_start_time:       scheduleStartTime || null,
@@ -513,6 +582,70 @@ export default function EventSetup() {
               </p>
             </div>
           </label>
+        </Section>
+
+        {/* ── SECTION: Age restriction ── */}
+        <Section icon={Info} title="Giới hạn độ tuổi">
+          <div className="space-y-2">
+            <select
+              value={ageCategory}
+              onChange={e => { setAgeCategory(e.target.value); setSaved(false) }}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {AGE_CATEGORY_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {ageCategoryHint(ageCategory) && (
+              <p className="text-xs text-gray-400">
+                VĐV đủ điều kiện: {ageCategoryHint(ageCategory)}
+              </p>
+            )}
+          </div>
+        </Section>
+
+        {/* ── SECTION: Custom registration fields ── */}
+        <Section icon={ClipboardList} title="Trường đăng ký tùy chỉnh">
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">
+              Thêm câu hỏi bổ sung cho VĐV khi đăng ký (tối đa 5 trường).
+            </p>
+            {customFields.map((field, idx) => (
+              <CustomFieldRow
+                key={field.id}
+                field={field}
+                onChange={updated => {
+                  setCustomFields(prev => prev.map((f, i) => i === idx ? updated : f))
+                  setSaved(false)
+                }}
+                onDelete={() => {
+                  setCustomFields(prev => prev.filter((_, i) => i !== idx))
+                  setSaved(false)
+                }}
+              />
+            ))}
+            {customFields.length < 5 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomFields(prev => [...prev, {
+                    id: crypto.randomUUID(),
+                    label: '',
+                    type: 'text',
+                    required: false,
+                    options: [],
+                  }])
+                  setSaved(false)
+                }}
+                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium py-1"
+              >
+                <Plus className="w-4 h-4" />
+                Thêm trường tùy chỉnh
+              </button>
+            ) : (
+              <p className="text-xs text-amber-600">Đã đạt giới hạn 5 trường.</p>
+            )}
+          </div>
         </Section>
 
         {/* ── SECTION: Courts ── */}

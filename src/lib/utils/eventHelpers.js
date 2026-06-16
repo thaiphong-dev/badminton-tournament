@@ -38,6 +38,56 @@ export function getStageScoringRule(scoringRules, stage) {
 }
 
 /**
+ * Age category options for EventSetup dropdown.
+ * `yearHint` is computed at call time so the year is always current.
+ */
+export const AGE_CATEGORY_OPTIONS = [
+  { value: 'open',    label: 'Không giới hạn tuổi (Mở)' },
+  { value: 'u17',     label: 'U17' },
+  { value: 'u19',     label: 'U19' },
+  { value: 'u35plus', label: 'U35+' },
+]
+
+export const AGE_CATEGORY_LABELS = {
+  open:    'Mở',
+  u17:     'U17',
+  u19:     'U19',
+  u35plus: 'U35+',
+}
+
+/**
+ * Returns the birth-year hint string shown to users.
+ * e.g. "sinh năm 2009 trở đi" for u17 in 2026.
+ */
+export function ageCategoryHint(category) {
+  const y = new Date().getFullYear()
+  if (category === 'u17')     return `sinh năm ${y - 17} trở đi`
+  if (category === 'u19')     return `sinh năm ${y - 19} trở đi`
+  if (category === 'u35plus') return `sinh năm ${y - 35} trở về trước`
+  return null
+}
+
+/**
+ * Returns true if the athlete (by date_of_birth string) is eligible
+ * for the given age_category.
+ *
+ * @param {string|null} dob          - ISO date string "YYYY-MM-DD" or null
+ * @param {string|null} ageCategory  - 'open' | 'u17' | 'u19' | 'u35plus' | null
+ * @returns {boolean}
+ */
+export function isAgeEligible(dob, ageCategory) {
+  if (!ageCategory || ageCategory === 'open') return true
+  if (!dob) return false  // DOB unknown → cannot verify, block
+  const birthYear = new Date(dob).getFullYear()
+  const thisYear  = new Date().getFullYear()
+  const age       = thisYear - birthYear
+  if (ageCategory === 'u17')     return age <= 17
+  if (ageCategory === 'u19')     return age <= 19
+  if (ageCategory === 'u35plus') return age >= 35
+  return true
+}
+
+/**
  * Check whether all events in a tournament have been completed.
  *
  * @param {Array} events - array of event rows from DB

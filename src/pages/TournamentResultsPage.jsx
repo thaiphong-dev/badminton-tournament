@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, startTransition } from 'react'
+import { createRoot } from 'react-dom/client'
 import { Link, useParams } from 'react-router-dom'
 import {
   Trophy, Crown, Download, AlertCircle, Loader2, ChevronRight,
@@ -6,10 +7,22 @@ import {
 import { supabase } from '@/lib/supabase'
 import { DISCIPLINE_LABELS, DISCIPLINE_ICONS, STATUS_LABELS } from '@/lib/constants'
 import { exportTournamentSummary } from '@/lib/utils/exportResults'
+import { downloadElementAsImage } from '@/lib/utils/downloadImage'
+import CertificateTemplate from '@/components/certificate/CertificateTemplate'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { cn } from '@/lib/utils/cn'
+
+// Slugify for certificate filenames
+function slugify(str) {
+  return str
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove diacritics
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 const STAGE_ORDER = ['round_of_16', 'quarter', 'semi', 'final', 'third_place']
 
@@ -33,6 +46,45 @@ function buildRankings(matches, playerMap) {
     second: playerMap[finLoser]       ?? null,
     third:  third?.winner_id ? (playerMap[third.winner_id] ?? null) : null,
     fourth: thirdLoser ? (playerMap[thirdLoser] ?? null) : null,
+  }
+}
+
+// ── Certificate download helper ───────────────────────────────────────────────
+
+/**
+ * Renders CertificateTemplate into a detached DOM node, captures it as PNG,
+ * and triggers a download. Uses createRoot so the component gets full React lifecycle.
+ */
+async function downloadCertificate({ playerName, club, position, eventName, tournamentName, date, location }) {
+  const container = document.createElement('div')
+  container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;z-index:-1'
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  try {
+    await new Promise(resolve => {
+      root.render(
+        <CertificateTemplate
+          playerName={playerName}
+          club={club}
+          position={position}
+          eventName={eventName}
+          tournamentName={tournamentName}
+          date={date}
+          location={location}
+        />
+      )
+      // Allow one paint cycle for fonts / layout to settle
+      setTimeout(resolve, 200)
+    })
+
+    const el = container.firstElementChild
+    if (!el) throw new Error('Certificate element not found')
+    const filename = `chung-nhan-${slugify(playerName)}-${slugify(eventName)}.png`
+    await downloadElementAsImage(el, filename)
+  } finally {
+    root.unmount()
+    document.body.removeChild(container)
   }
 }
 
@@ -184,6 +236,7 @@ export default function TournamentResultsPage() {
               event={event}
               rankings={rankings}
               tournamentId={id}
+              tournament={tournament}
             />
           ))}
         </div>
@@ -193,10 +246,34 @@ export default function TournamentResultsPage() {
 }
 
 // ── Event Result Card ─────────────────────────────────────────────────────────
-function EventResultCard({ event, rankings, tournamentId }) {
-  const icon    = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
-  const label   = DISCIPLINE_LABELS[event.discipline] ?? event.name
-  const isDone  = event.status === 'completed'
+function EventResultCard({ event, rankings, tournamentId, tournament }) {
+  const [downloading, setDownloading] = useState(null) // null | 1 | 2 | 3
+
+  const icon   = DISCIPLINE_ICONS[event.discipline] ?? '🏸'
+  const label  = DISCIPLINE_LABELS[event.discipline] ?? event.name
+  const isDone = event.status === 'completed'
+
+  async function handleDownload(player, position) {
+    setDownloading(position)
+    try {
+      const date = tournament?.start_date
+        ? new Date(tournament.start_date).toLocaleDateString('vi-VN')
+        : undefined
+      await downloadCertificate({
+        playerName:     player.name,
+        club:           player.club || '',
+        position,
+        eventName:      label,
+        tournamentName: tournament?.name ?? '',
+        date,
+        location:       tournament?.location || undefined,
+      })
+    } catch (err) {
+      console.error('[EventResultCard] certificate download error:', err)
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -221,10 +298,22 @@ function EventResultCard({ event, rankings, tournamentId }) {
         {/* Podium rows */}
         {rankings ? (
           <div className="space-y-2">
-            <PodiumRow rank={1} player={rankings.first}  medal="🥇" bg="bg-yellow-50 border-yellow-100" />
-            <PodiumRow rank={2} player={rankings.second} medal="🥈" bg="bg-gray-50 border-gray-100" />
+            <PodiumRow
+              rank={1} player={rankings.first} medal="🥇" bg="bg-yellow-50 border-yellow-100"
+              onDownload={isDone ? () => handleDownload(rankings.first, 1) : null}
+              downloading={downloading === 1}
+            />
+            <PodiumRow
+              rank={2} player={rankings.second} medal="🥈" bg="bg-gray-50 border-gray-100"
+              onDownload={isDone ? () => handleDownload(rankings.second, 2) : null}
+              downloading={downloading === 2}
+            />
             {rankings.third && (
-              <PodiumRow rank={3} player={rankings.third} medal="🥉" bg="bg-orange-50 border-orange-100" />
+              <PodiumRow
+                rank={3} player={rankings.third} medal="🥉" bg="bg-orange-50 border-orange-100"
+                onDownload={isDone ? () => handleDownload(rankings.third, 3) : null}
+                downloading={downloading === 3}
+              />
             )}
             {rankings.fourth && (
               <div className="flex items-center gap-2 text-sm text-gray-500 pt-1 border-t border-gray-50 mt-2">
@@ -244,7 +333,7 @@ function EventResultCard({ event, rankings, tournamentId }) {
   )
 }
 
-function PodiumRow({ rank, player, medal, bg }) {
+function PodiumRow({ rank, player, medal, bg, onDownload, downloading }) {
   if (!player) return null
   return (
     <div className={cn('flex items-center gap-2.5 px-3 py-2 rounded-lg border', bg)}>
@@ -255,6 +344,19 @@ function PodiumRow({ rank, player, medal, bg }) {
         </p>
         <p className="text-xs text-gray-400 truncate">{player.club}</p>
       </div>
+      {onDownload && (
+        <button
+          onClick={onDownload}
+          disabled={downloading}
+          title="Tải chứng nhận"
+          className="shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+        >
+          {downloading
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Download className="w-3.5 h-3.5" />
+          }
+        </button>
+      )}
     </div>
   )
 }
