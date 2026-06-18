@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [actionError, setActionError] = useState(null)
   const [loading, setLoading]       = useState(true)
   const [orderAutoConfirmed, setOrderAutoConfirmed] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   // Redirect if not a creator
   useEffect(() => {
@@ -84,6 +85,11 @@ export default function CheckoutPage() {
     setOrder(orderRes.data)
     setBankInfo(bankRes.data?.value ?? null)
 
+    if (orderRes.data.status === 'confirmed') {
+      setOrderAutoConfirmed(true)
+      setShowSuccessModal(true)
+    }
+
     const addonPricingRes = await supabase
       .from('app_config').select('value').eq('key', 'addon_pricing').maybeSingle()
     const addonType = orderRes.data?.addon?.addon_type ?? 'tournament_slot'
@@ -93,7 +99,12 @@ export default function CheckoutPage() {
       name:  qty > 1 ? `${label} ×${qty}` : label,
       price: orderRes.data?.amount,
     })
-    setStep(2)
+
+    if (orderRes.data.status === 'confirmed' || orderRes.data.status === 'rejected' || orderRes.data.status === 'waiting') {
+      setStep(2)
+    } else if (orderRes.data.status === 'pending') {
+      setStep(3)
+    }
     setLoading(false)
   }
 
@@ -108,6 +119,27 @@ export default function CheckoutPage() {
     if (planRes.data.slug === 'free') { navigate('/plans'); return }
     setPlan(planRes.data)
     setBankInfo(bankRes.data?.value ?? null)
+
+    if (orderId) {
+      const { data: orderRow, error: orderErr } = await supabase
+        .from('payment_orders')
+        .select('id, amount, transfer_content, status')
+        .eq('id', orderId)
+        .single()
+      
+      if (!orderErr && orderRow) {
+        setOrder(orderRow)
+        if (orderRow.status === 'confirmed') {
+          setOrderAutoConfirmed(true)
+          setShowSuccessModal(true)
+        }
+        if (orderRow.status === 'confirmed' || orderRow.status === 'rejected' || orderRow.status === 'waiting') {
+          setStep(2)
+        } else if (orderRow.status === 'pending') {
+          setStep(3)
+        }
+      }
+    }
     setLoading(false)
   }
 
@@ -124,6 +156,7 @@ export default function CheckoutPage() {
       }, (payload) => {
         if (payload.new.status === 'confirmed') {
           setOrderAutoConfirmed(true)
+          setShowSuccessModal(true)
         } else if (payload.new.status === 'rejected') {
           setActionError('Đơn hàng đã bị từ chối. Vui lòng liên hệ admin.')
         }
@@ -547,6 +580,45 @@ export default function CheckoutPage() {
               className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
             >
               {isAddon ? 'Xem add-on của tôi →' : 'Xem trạng thái đơn →'}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-xl border border-gray-100 transform scale-100 transition-all">
+            <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-10 h-10 text-green-500" />
+            </div>
+            
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Thanh toán thành công!</h2>
+            <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+              Đơn hàng của bạn đã được xác nhận tự động qua cổng thanh toán SePay. Gói dịch vụ đã được kích hoạt thành công.
+            </p>
+
+            <div className="bg-gray-50 rounded-xl p-4 text-left text-sm space-y-2 mb-6">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Gói dịch vụ:</span>
+                <span className="font-semibold text-gray-800">{plan?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Số tiền:</span>
+                <span className="font-bold text-red-600">{formatVND(order?.amount ?? plan?.price ?? 0)}</span>
+              </div>
+              {order && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Nội dung CK:</span>
+                  <span className="font-mono text-xs font-semibold bg-white border border-gray-200 px-1.5 py-0.5 rounded">{order.transfer_content}</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => navigate('/creator/subscription')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Xác nhận
             </button>
           </div>
         </div>

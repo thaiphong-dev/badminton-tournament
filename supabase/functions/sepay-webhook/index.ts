@@ -107,9 +107,10 @@ Deno.serve(async (req: Request) => {
   // It handles: order lookup, amount validation, payment_orders update, and
   // subscription / addon activation in a single atomic transaction.
   const { data, error } = await serviceClient
-    .rpc('webhook_auto_confirm_order', {
+    .rpc('webhook_confirm_payment', {
       p_transfer_content: reference,
       p_amount:           Math.round(transferAmount),
+      p_sepay_tx_id:      String(sePayId || ''),
     })
 
   if (error) {

@@ -23,10 +23,10 @@ DECLARE
   v_order    payment_orders%ROWTYPE;
   v_is_addon BOOLEAN;
 BEGIN
-  -- ── 1. Find matching pending order (case-insensitive, trim whitespace) ─────
+  -- ── 1. Find matching pending order (case-insensitive, trim whitespace, hyphens, and spaces) ─────
   SELECT * INTO v_order
   FROM payment_orders
-  WHERE LOWER(TRIM(transfer_content)) = LOWER(TRIM(p_transfer_content))
+  WHERE REPLACE(REPLACE(UPPER(p_transfer_content), '-', ''), ' ', '') LIKE '%' || REPLACE(REPLACE(UPPER(TRIM(transfer_content)), '-', ''), ' ', '') || '%'
     AND status = 'waiting'
   LIMIT 1;
 
@@ -71,7 +71,7 @@ BEGIN
     UPDATE subscriptions
     SET
       status     = 'active',
-      started_at = COALESCE(started_at, now()),
+      starts_at  = COALESCE(starts_at, now()),
       expires_at = GREATEST(COALESCE(expires_at, now()), now()) + INTERVAL '30 days'
     WHERE id = v_order.subscription_id;
   END IF;
