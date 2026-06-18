@@ -143,28 +143,41 @@ export default function CheckoutPage() {
     setLoading(false)
   }
 
+  // Listen to realtime notifications on user_notifications table only during Step 2
   useEffect(() => {
-    if (!order?.id) return
+    if (!profile?.id || step !== 2) return
 
     const channel = supabase
-      .channel(`checkout-order-${order.id}-${mountKey.current}`)
+      .channel(`checkout-notifs-${profile.id}-${mountKey.current}`)
       .on('postgres_changes', {
-        event: 'UPDATE',
+        event: 'INSERT',
         schema: 'public',
-        table: 'payment_orders',
-        filter: `id=eq.${order.id}`,
-      }, (payload) => {
-        if (payload.new.status === 'confirmed') {
+        table: 'user_notifications',
+        filter: `user_id=eq.${profile.id}`,
+      }, async (payload) => {
+        const n = payload.new
+        if (n.type === 'payment_confirmed') {
+          // Refresh order details if we have an order ID
+          if (order?.id) {
+            const { data: updatedOrder } = await supabase
+              .from('payment_orders')
+              .select('id, amount, transfer_content, status')
+              .eq('id', order.id)
+              .single()
+            if (updatedOrder) {
+              setOrder(updatedOrder)
+            }
+          }
           setOrderAutoConfirmed(true)
           setShowSuccessModal(true)
-        } else if (payload.new.status === 'rejected') {
+        } else if (n.type === 'payment_rejected') {
           setActionError('Đơn hàng đã bị từ chối. Vui lòng liên hệ admin.')
         }
       })
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [order?.id])
+  }, [profile?.id, order?.id, step])
 
   const qrUrl = bankInfo?.bank_code && bankInfo?.bank_account && order
     ? `https://qr.sepay.vn/img?bank=${bankInfo.bank_code}&acc=${bankInfo.bank_account}` +
