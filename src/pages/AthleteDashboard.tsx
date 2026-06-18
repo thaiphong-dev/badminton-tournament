@@ -359,6 +359,8 @@ function MyRegistrationsTab({ profile }) {
         .select(`
           id, status, note, created_at, event_id,
           looking_for_partner, partner_note,
+          partner_id, partner_name, partner_club,
+          partner_profile:profiles!partner_id(id, name, club),
           tournaments(id, name, status, start_date),
           events(id, name, discipline)
         `)
@@ -470,6 +472,23 @@ function MyRegistrationsTab({ profile }) {
                     </span>
                   </div>
 
+                  {/* Partner info if registered with a partner */}
+                  {(r.partner_id || r.partner_name) && (
+                    <div className="mx-5 mb-3 px-3 py-2 bg-gray-50/50 border border-gray-100 rounded-xl flex items-center justify-between text-xs text-gray-600">
+                      <div>
+                        <span className="font-semibold text-gray-400">Partner: </span>
+                        <span className="font-bold text-gray-700">
+                          {r.partner_profile?.name || r.partner_name}
+                        </span>
+                        {(r.partner_profile?.club || r.partner_club) && (
+                          <span className="text-gray-400 font-normal">
+                            {' '}· {r.partner_profile?.club || r.partner_club}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Match schedule for approved events */}
                   {r.status === 'approved' && matches.length > 0 && (
                     <div className="mx-5 mb-3 border border-gray-100 rounded-xl overflow-hidden">
@@ -546,8 +565,8 @@ function MyRegistrationsTab({ profile }) {
                     </p>
                   )}
 
-                  {/* Doubles partner finder — only for approved doubles registrations */}
-                  {r.status === 'approved' && r.events?.discipline?.includes('doubles') && (
+                  {/* Doubles partner finder — only for approved doubles registrations without partner */}
+                  {r.status === 'approved' && r.events?.discipline?.includes('doubles') && !r.partner_id && !r.partner_name && (
                     <DoublesPartnerSection reg={r} profile={profile} />
                   )}
                 </div>

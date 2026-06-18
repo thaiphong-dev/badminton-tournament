@@ -57,6 +57,7 @@ export default {
 
   nav: {
     home:             'Trang chủ',
+    features:         'Tính năng',
     myPlan:           'Gói của tôi',
     buyMore:          'Mua thêm',
     plans:            'Gói dịch vụ',

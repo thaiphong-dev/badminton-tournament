@@ -145,6 +145,48 @@ export default function Home() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
+      {/* Welcome & Features Intro Banner */}
+      {(isPublic || isCreator) && (
+        <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 rounded-2xl p-6 md:p-8 text-white mb-8 shadow-md hover:shadow-lg transition-all duration-300">
+          {/* Background decorative elements */}
+          <div className="absolute right-0 top-0 -mt-6 -mr-6 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute left-1/3 bottom-0 -mb-8 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="max-w-2xl">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-xs font-semibold text-white mb-3">
+                🏸 BT Manager — Badminton Tournament Organizer
+              </span>
+              <h2 className="text-xl md:text-2xl font-black tracking-tight leading-tight">
+                {lang === 'en' ? 'Manage Badminton Tournaments Professionally' : 'Quản lý giải cầu lông chuyên nghiệp của bạn'}
+              </h2>
+              <p className="text-sm text-blue-100 mt-2">
+                {lang === 'en' 
+                  ? 'Explore our premium features: smart brackets, real-time umpire scoreboards, live scoreboard streams, court planners, and full reports.' 
+                  : 'Khám phá các tính năng xịn xò: tự tạo nhánh đấu, ghi điểm trọng tài real-time, livescore trực tiếp, điều phối sân đấu và báo cáo tự động.'}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <Link
+                to="/features"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-white text-blue-600 hover:bg-blue-50 font-bold text-sm rounded-xl transition-all shadow-sm hover:scale-105 active:scale-95 duration-200"
+              >
+                {lang === 'en' ? 'Explore Features' : 'Xem Giới Thiệu'}
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+              {isPublic && (
+                <Link
+                  to="/register"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white border border-blue-500/30 font-semibold text-sm rounded-xl transition-all hover:scale-105 active:scale-95 duration-200"
+                >
+                  {lang === 'en' ? 'Sign Up Free' : 'Đăng Ký Miễn Phí'}
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header by role */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div>

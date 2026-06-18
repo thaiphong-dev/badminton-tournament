@@ -57,6 +57,7 @@ export default {
 
   nav: {
     home:             'Home',
+    features:         'Features',
     myPlan:           'My Plan',
     buyMore:          'Add-ons',
     plans:            'Plans',

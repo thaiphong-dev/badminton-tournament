@@ -15,11 +15,13 @@ DECLARE
   v_monthly               JSON;
   v_recent                JSON;
 BEGIN
-  -- Guard: caller must be the creator themselves or admin
-  IF (SELECT role FROM profiles WHERE id = auth.uid()) NOT IN ('admin', 'creator') THEN
-    RAISE EXCEPTION 'unauthorized';
-  END IF;
-  IF auth.uid() != p_creator_id AND (SELECT role FROM profiles WHERE id = auth.uid()) != 'admin' THEN
+  -- Guard: p_creator_id must be a valid creator or admin profile
+  IF NOT EXISTS (
+    SELECT 1 FROM profiles 
+    WHERE id = p_creator_id 
+      AND role IN ('creator', 'admin') 
+      AND is_active = true
+  ) THEN
     RAISE EXCEPTION 'unauthorized';
   END IF;
 
@@ -100,4 +102,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_creator_analytics(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_creator_analytics(UUID) TO anon, authenticated;

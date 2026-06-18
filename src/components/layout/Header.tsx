@@ -111,6 +111,7 @@ export default function Header() {
           {/* ── Desktop nav (lg+) ── */}
           <nav className="hidden lg:flex items-center gap-0.5 flex-1 mx-2">
             <NavLink to="/" label={t('nav.home')} />
+            <NavLink to="/features" label={t('nav.features')} />
             {role === 'creator' && (
               <>
                 <NavLink to="/creator/subscription" label={t('nav.myPlan')} />
@@ -121,19 +122,19 @@ export default function Header() {
             )}
             {!profile && <NavLink to="/plans" label={t('nav.pricing')} />}
           </nav>
-
+ 
           {/* ── Right side ── */}
           <div className="flex items-center gap-1 shrink-0">
             {/* Language switcher — desktop only */}
             <div className="hidden lg:block">
               <LanguageSwitcher />
             </div>
-
+ 
             {/* Notification bell */}
             {(role === 'creator' || role === 'admin' || role === 'athlete') && profile && (
               <NotificationBell userId={profile.id} role={role} />
             )}
-
+ 
             {/* Create tournament: icon on mobile, full button on desktop */}
             {(role === 'creator' || role === 'admin') && (
               <Link
@@ -144,7 +145,7 @@ export default function Header() {
                 <span className="hidden lg:inline">{t('nav.createTournament')}</span>
               </Link>
             )}
-
+ 
             {/* User avatar / login */}
             {profile ? (
               <div className="relative" ref={dropdownRef}>
@@ -166,11 +167,11 @@ export default function Header() {
                   </div>
                   <ChevronDown className={cn('hidden lg:block w-3.5 h-3.5 text-gray-400 transition-transform', userOpen && 'rotate-180')} />
                 </button>
-
+ 
                 {userOpen && (
                   <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
                     <div className="px-3 py-2 border-b border-gray-100">
-                      <p className="text-xs font-medium text-gray-900 truncate">{profile.name}</p>
+                      <p className="text-xs font-medium text-gray-950 truncate">{profile.name}</p>
                       <p className="text-xs text-gray-500 truncate">{profile.phone}</p>
                     </div>
                     {role === 'admin' && (
@@ -199,7 +200,7 @@ export default function Header() {
                 {t('nav.login')}
               </Link>
             )}
-
+ 
             {/* Hamburger — below lg */}
             <button
               onClick={() => setMobileOpen(v => !v)}
@@ -211,11 +212,12 @@ export default function Header() {
           </div>
         </div>
       </div>
-
+ 
       {/* ── Mobile drawer (below lg) ── */}
       {mobileOpen && (
         <div className="lg:hidden border-t border-gray-100 bg-white px-4 pb-4 pt-2 space-y-1 shadow-lg">
           <NavLink to="/" label={t('nav.home')} onClick={() => setMobileOpen(false)} />
+          <NavLink to="/features" label={t('nav.features')} onClick={() => setMobileOpen(false)} />
           {role === 'creator' && (
             <>
               <NavLink to="/creator/subscription" label={t('nav.myPlan')}   onClick={() => setMobileOpen(false)} />

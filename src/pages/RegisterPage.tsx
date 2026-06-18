@@ -4,6 +4,13 @@ import { Trophy, Loader2, AlertCircle, ChevronLeft, Eye, EyeOff } from 'lucide-r
 import { useAuth, registerWithPhone, defaultPathForRole } from '@/lib/hooks/useAuth'
 import { sanitizeAndTrim } from '@/lib/utils/sanitize'
 
+function isValidPhone(p: string) {
+  const digits = p.replace(/\D/g, '')
+  if (digits.startsWith('0') && digits.length === 10) return true
+  if (digits.startsWith('84') && digits.length === 11) return true
+  return false
+}
+
 const ROLES = [
   { key: 'creator', emoji: '🏆', title: 'Creator',        desc: 'Tổ chức và quản lý giải đấu' },
   { key: 'athlete', emoji: '🏸', title: 'Vận động viên',  desc: 'Đăng ký thi đấu tại các giải' },
@@ -32,8 +39,7 @@ export default function RegisterPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const digits = phone.replace(/\D/g, '')
-    if (digits.length < 9) { setError('Số điện thoại không hợp lệ (ít nhất 9 chữ số).'); return }
+    if (!isValidPhone(phone)) { setError('Số điện thoại không hợp lệ.'); return }
     if (password.length < 8) { setError('Mật khẩu tối thiểu 8 ký tự.'); return }
     if (selectedRole === 'athlete') {
       if (!gender) { setError('Vui lòng chọn giới tính.'); return }
@@ -233,8 +239,8 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              disabled={loading || !name.trim() || !isValidPhone(phone) || password.length < 8 || (selectedRole === 'athlete' && (!gender || !dob))}
+              className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Tạo tài khoản

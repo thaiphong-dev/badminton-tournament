@@ -3,6 +3,13 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Trophy, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { useAuth, loginWithPhone, defaultPathForRole } from '@/lib/hooks/useAuth'
 
+function isValidPhone(p: string) {
+  const digits = p.replace(/\D/g, '')
+  if (digits.startsWith('0') && digits.length === 10) return true
+  if (digits.startsWith('84') && digits.length === 11) return true
+  return false
+}
+
 export default function LoginPage() {
   const navigate  = useNavigate()
   const location  = useLocation()
@@ -23,8 +30,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const digits = phone.replace(/\D/g, '')
-    if (digits.length < 9) { setError('Số điện thoại không hợp lệ.'); return }
+    if (!isValidPhone(phone)) { setError('Số điện thoại không hợp lệ.'); return }
 
     setError('')
     setLoading(true)
@@ -115,8 +121,8 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            disabled={loading || !isValidPhone(phone) || !password}
+            className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             Đăng nhập
