@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone'
 import * as XLSX from 'xlsx'
 import {
   Upload, Plus, Trash2, Download, CheckCircle,
-  AlertCircle, FileSpreadsheet, Pencil, X, Check, ExternalLink,
+  AlertCircle, FileSpreadsheet, Pencil, X, Check, ExternalLink, Loader2,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -47,6 +47,7 @@ export default function PlayerImport({
   const [importSuccess, setImportSuccess] = useState(false)
   const [limitWarning, setLimitWarning] = useState(null)
   const [showConfirmSave, setShowConfirmSave] = useState(false)
+  const [downloading, setDownloading]   = useState(false)
 
   // ── File parsing ────────────────────────────────────────────────────────────
   const onDrop = useCallback((acceptedFiles) => {
@@ -322,42 +323,46 @@ export default function PlayerImport({
 
   // ── Sample file download ───────────────────────────────────────────────────
   function downloadSample() {
-    let data, filename
-    if (isDoubles) {
-      const header = requirePlayerCode
-        ? ['Mã số', 'VĐV 1', 'VĐV 2', 'CLB']
-        : ['VĐV 1', 'VĐV 2', 'CLB']
-      data = [
-        header,
-        ...(requirePlayerCode
-          ? [['001001', 'Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
-             ['001002', 'Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]
-          : [['Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
-             ['Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]),
-      ]
-      filename = 'mau_danh_sach_doi.xlsx'
-    } else {
-      const header = requirePlayerCode ? ['Mã số', 'Tên', 'CLB'] : ['Tên', 'CLB']
-      data = [
-        header,
-        ...(requirePlayerCode
-          ? [['001001', 'Nguyễn Văn An', 'CLB Thành Công'],
-             ['001002', 'Trần Thị Bình', 'CLB Sao Việt'],
-             ['001003', 'Lê Văn Cường', 'CLB Tiến Phát']]
-          : [['Nguyễn Văn An', 'CLB Thành Công'],
-             ['Trần Thị Bình', 'CLB Sao Việt'],
-             ['Lê Văn Cường', 'CLB Tiến Phát']]),
-      ]
-      filename = requirePlayerCode ? 'mau_danh_sach_chuyen_nghiep.xlsx' : 'mau_danh_sach_vdv.xlsx'
-    }
-    const ws = XLSX.utils.aoa_to_sheet(data)
-    const colWidths = requirePlayerCode
-      ? (isDoubles ? [{ wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 12 }, { wch: 25 }, { wch: 20 }])
-      : (isDoubles ? [{ wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 25 }, { wch: 20 }])
-    ws['!cols'] = colWidths
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, isDoubles ? 'Danh sách đôi' : 'Danh sách VĐV')
-    XLSX.writeFile(wb, filename)
+    setDownloading(true)
+    setTimeout(() => {
+      let data, filename
+      if (isDoubles) {
+        const header = requirePlayerCode
+          ? ['Mã số', 'VĐV 1', 'VĐV 2', 'CLB']
+          : ['VĐV 1', 'VĐV 2', 'CLB']
+        data = [
+          header,
+          ...(requirePlayerCode
+            ? [['001001', 'Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
+               ['001002', 'Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]
+            : [['Nguyễn Văn An', 'Trần Văn Bình', 'CLB Thành Công'],
+               ['Lê Thị Cúc', 'Phạm Thị Dung', 'CLB Sao Việt']]),
+        ]
+        filename = 'mau_danh_sach_doi.xlsx'
+      } else {
+        const header = requirePlayerCode ? ['Mã số', 'Tên', 'CLB'] : ['Tên', 'CLB']
+        data = [
+          header,
+          ...(requirePlayerCode
+            ? [['001001', 'Nguyễn Văn An', 'CLB Thành Công'],
+               ['001002', 'Trần Thị Bình', 'CLB Sao Việt'],
+               ['001003', 'Lê Văn Cường', 'CLB Tiến Phát']]
+            : [['Nguyễn Văn An', 'CLB Thành Công'],
+               ['Trần Thị Bình', 'CLB Sao Việt'],
+               ['Lê Văn Cường', 'CLB Tiến Phát']]),
+        ]
+        filename = requirePlayerCode ? 'mau_danh_sach_chuyen_nghiep.xlsx' : 'mau_danh_sach_vdv.xlsx'
+      }
+      const ws = XLSX.utils.aoa_to_sheet(data)
+      const colWidths = requirePlayerCode
+        ? (isDoubles ? [{ wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 12 }, { wch: 25 }, { wch: 20 }])
+        : (isDoubles ? [{ wch: 22 }, { wch: 22 }, { wch: 20 }] : [{ wch: 25 }, { wch: 20 }])
+      ws['!cols'] = colWidths
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, isDoubles ? 'Danh sách đôi' : 'Danh sách VĐV')
+      XLSX.writeFile(wb, filename)
+      setDownloading(false)
+    }, 500)
   }
 
   const newCount = players.filter(p => p._local).length
@@ -421,10 +426,20 @@ export default function PlayerImport({
         <span className="text-gray-400">Chưa có file? Dùng file mẫu.</span>
         <button
           onClick={downloadSample}
-          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 font-medium"
+          disabled={downloading}
+          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
         >
-          <Download className="w-4 h-4" />
-          Tải file mẫu .xlsx
+          {downloading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Đang tải...
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4" />
+              Tải file mẫu .xlsx
+            </>
+          )}
         </button>
       </div>
 

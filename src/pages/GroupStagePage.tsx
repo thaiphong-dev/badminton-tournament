@@ -8,6 +8,7 @@ import { showToast } from '@/lib/hooks/useApiError'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { exportScheduleToExcel } from '@/lib/utils/exportResults'
 import { calculateStandings } from '@/lib/utils/standingsCalculator'
+import { GroupTableSkeleton } from '@/components/ui/Skeleton'
 import Badge from '@/components/ui/Badge'
 import GroupRandomizer from '@/components/groups/GroupRandomizer'
 import DrawLottery from '@/components/groups/DrawLottery'
@@ -55,6 +56,7 @@ export default function GroupStagePage() {
   const [umpireMap, setUmpireMap]   = useState({})     // umpireId → { name, phone }
   const [assignMatch, setAssignMatch] = useState(null) // match to assign umpire
   const [rallyMatch, setRallyMatch]   = useState(null) // match to view rally log
+  const [exporting, setExporting]     = useState(false)
 
   useEffect(() => {
     fetchAll()
@@ -215,13 +217,17 @@ export default function GroupStagePage() {
     }
   }
 
+  function handleExport() {
+    setExporting(true)
+    setTimeout(() => {
+      exportScheduleToExcel(tournament, matches, event)
+      setExporting(false)
+    }, 600)
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    )
+    return <GroupTableSkeleton />
   }
   if (error) return <div className="max-w-2xl mx-auto px-4 py-24 text-center text-red-600">{error}</div>
   if (!tournament) return null
@@ -295,11 +301,20 @@ export default function GroupStagePage() {
           </div>
           {matches.length > 0 && canManage && (
             <button
-              onClick={() => exportScheduleToExcel(tournament, matches, event)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors shrink-0 disabled:opacity-50"
               title="Xuất lịch thi đấu ra Excel"
             >
-              <Download className="w-3.5 h-3.5" /> Xuất lịch
+              {exporting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang xuất...
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" /> Xuất lịch
+                </>
+              )}
             </button>
           )}
         </div>

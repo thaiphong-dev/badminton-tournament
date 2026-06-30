@@ -29,6 +29,7 @@ function genderLabel(allowed) {
 }
 import { isTournamentComplete, isAgeEligible, getAgeCategoryLabel } from '@/lib/utils/eventHelpers'
 import { useI18n } from '@/i18n'
+import { TournamentOverviewSkeleton } from '@/components/ui/Skeleton'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Breadcrumb from '@/components/layout/Breadcrumb'
@@ -298,11 +299,7 @@ export default function TournamentOverview() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    )
+    return <TournamentOverviewSkeleton />
   }
 
   if (error || !tournament) {

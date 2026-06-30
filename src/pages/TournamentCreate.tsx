@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Trophy, Check, AlertCircle, ExternalLink,
-  Upload, X, FileText, Image, Info, ClipboardList,
+  Upload, X, FileText, Image, Info, ClipboardList, Loader2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -96,12 +96,17 @@ function DisciplineCard({ discipline, selected, disabled, maxTeams, onToggle, on
 }
 
 // ── File upload widget ────────────────────────────────────────────────────────
-function FileUpload({ label, hint, accept, icon: Icon, file, onSelect, onClear }) {
+function FileUpload({ label, hint, accept, icon: Icon, file, onSelect, onClear, uploading = false }) {
   const ref = useRef(null)
   return (
     <div>
       <p className="text-sm font-medium text-gray-700 mb-1.5">{label}</p>
-      {file ? (
+      {uploading ? (
+        <div className="flex items-center gap-2.5 px-3 py-3.5 border border-blue-200 bg-blue-50 rounded-xl">
+          <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
+          <span className="text-xs text-blue-600 truncate flex-1 font-medium">Đang tải lên tài liệu...</span>
+        </div>
+      ) : file ? (
         <div className="flex items-center gap-2.5 px-3 py-2.5 border border-blue-200 bg-blue-50 rounded-xl">
           <Icon className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-xs text-blue-700 truncate flex-1">{file.name}</span>
@@ -126,7 +131,7 @@ function FileUpload({ label, hint, accept, icon: Icon, file, onSelect, onClear }
           </div>
         </button>
       )}
-      <input ref={ref} type="file" accept={accept} className="hidden" onChange={e => e.target.files?.[0] && onSelect(e.target.files[0])} />
+      <input ref={ref} type="file" accept={accept} className="hidden" onChange={e => e.target.files?.[0] && onSelect(e.target.files[0])} disabled={uploading} />
     </div>
   )
 }
@@ -580,6 +585,7 @@ export default function TournamentCreate() {
               file={regulationsFile}
               onSelect={setRegulationsFile}
               onClear={() => setRegulationsFile(null)}
+              uploading={loading}
             />
 
             {/* Chat QR image */}
@@ -591,6 +597,7 @@ export default function TournamentCreate() {
               file={chatQrFile}
               onSelect={setChatQrFile}
               onClear={() => setChatQrFile(null)}
+              uploading={loading}
             />
 
             {submitError && (

@@ -15,6 +15,7 @@ import { saveKnockoutBracket } from '@/lib/utils/bracketGenerator'
 import { getQualifiedPlayers } from '@/lib/utils/qualifyPlayers'
 import { advanceWinner, repairBracketLinks } from '@/lib/utils/advanceWinner'
 import Badge from '@/components/ui/Badge'
+import { MatchBracketSkeleton } from '@/components/ui/Skeleton'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ScoreModal from '@/components/shared/ScoreModal'
 import BracketView from '@/components/knockout/BracketView'
@@ -431,15 +432,16 @@ export default function KnockoutPage() {
   }, [byStage, playerMap])
 
   // ── Render ──────────────────────────────────────────────────────────────────
-  if (loading || generating) {
+  if (generating) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <p className="text-sm text-gray-500">
-          {generating ? 'Đang tạo cây knockout...' : 'Đang tải...'}
-        </p>
+        <p className="text-sm text-gray-500">Đang tạo cây knockout...</p>
       </div>
     )
+  }
+  if (loading) {
+    return <MatchBracketSkeleton />
   }
 
   const disciplineIcon  = event ? (DISCIPLINE_ICONS[event.discipline] ?? '🏸') : null

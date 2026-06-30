@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { STATUS_LABELS } from '@/lib/constants'
 import Badge from '@/components/ui/Badge'
+import { DashboardTableSkeleton, SkeletonLine, Skeleton } from '@/components/ui/Skeleton'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { cn } from '@/lib/utils/cn'
 import OrdersTab from '@/components/admin/OrdersTab'
@@ -303,8 +304,20 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <LoadingSpinner size="lg" text="Đang tải..." />
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-pulse">
+        {/* Header skeleton */}
+        <div className="space-y-2">
+          <SkeletonLine width="1/4" className="h-6" />
+          <SkeletonLine width="1/2" className="h-4" />
+        </div>
+        {/* Stats cards skeleton */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {[...Array(8)].map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-2xl" />
+          ))}
+        </div>
+        {/* Table skeleton */}
+        <DashboardTableSkeleton rows={5} cols={5} />
       </div>
     )
   }

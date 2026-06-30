@@ -492,7 +492,15 @@ export default function CheckoutPage() {
                   setActionError(null)
                 }}
               />
-              {proofFile ? (
+              {uploading ? (
+                <div className="flex flex-col items-center justify-center py-2 gap-2 text-sm text-blue-600">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  <p className="font-semibold">Đang tải lên ảnh minh chứng...</p>
+                  <div className="w-32 bg-blue-100 h-1.5 rounded-full overflow-hidden mt-1">
+                    <div className="bg-blue-600 h-full animate-pulse" style={{ width: '75%' }}></div>
+                  </div>
+                </div>
+              ) : proofFile ? (
                 <div className="flex items-center justify-center gap-2 text-sm text-green-700">
                   <Check className="w-5 h-5" />
                   <span className="font-medium">{proofFile.name}</span>

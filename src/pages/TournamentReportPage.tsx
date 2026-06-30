@@ -43,6 +43,7 @@ export default function TournamentReportPage() {
 
   const [sortKey, setSortKey] = useState('matchCount')
   const [sortDir, setSortDir] = useState('desc')
+  const [exporting, setExporting] = useState(false)
 
   async function fetchData() {
     setLoading(true)
@@ -137,33 +138,37 @@ export default function TournamentReportPage() {
 
   // ── Excel export ───────────────────────────────────────────────────────────
   function exportExcel() {
-    const rows = sortedPlayerStats.map((p, i) => ({
-      '#':             i + 1,
-      'Tên VĐV':       playerMap[p.playerId]?.name ?? p.playerId,
-      'Số trận':       p.matchCount,
-      'Lỗi phát cầu': p.serviceFaults,
-      'Thẻ vàng':      p.yellowCards,
-      'Thẻ đỏ':        p.redCards,
-    }))
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(rows)
-    // Column widths
-    ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 10 }]
-    XLSX.utils.book_append_sheet(wb, ws, 'Thống kê VĐV')
+    setExporting(true)
+    setTimeout(() => {
+      const rows = sortedPlayerStats.map((p, i) => ({
+        '#':             i + 1,
+        'Tên VĐV':       playerMap[p.playerId]?.name ?? p.playerId,
+        'Số trận':       p.matchCount,
+        'Lỗi phát cầu': p.serviceFaults,
+        'Thẻ vàng':      p.yellowCards,
+        'Thẻ đỏ':        p.redCards,
+      }))
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows)
+      // Column widths
+      ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 10 }]
+      XLSX.utils.book_append_sheet(wb, ws, 'Thống kê VĐV')
 
-    // Overview sheet
-    const ovRows = [
-      { 'Chỉ số': 'Tổng trận hoàn thành', 'Giá trị': overview.count },
-      { 'Chỉ số': 'Tổng thời gian thi đấu', 'Giá trị': formatTotalDuration(overview.totalDuration) },
-      { 'Chỉ số': 'Tổng cầu lông đã dùng', 'Giá trị': overview.totalShuttles },
-      { 'Chỉ số': 'Trận dài nhất', 'Giá trị': formatDuration(overview.longestSec) },
-    ]
-    const wsOv = XLSX.utils.json_to_sheet(ovRows)
-    wsOv['!cols'] = [{ wch: 28 }, { wch: 20 }]
-    XLSX.utils.book_append_sheet(wb, wsOv, 'Tổng quan')
+      // Overview sheet
+      const ovRows = [
+        { 'Chỉ số': 'Tổng trận hoàn thành', 'Giá trị': overview.count },
+        { 'Chỉ số': 'Tổng thời gian thi đấu', 'Giá trị': formatTotalDuration(overview.totalDuration) },
+        { 'Chỉ số': 'Tổng cầu lông đã dùng', 'Giá trị': overview.totalShuttles },
+        { 'Chỉ số': 'Trận dài nhất', 'Giá trị': formatDuration(overview.longestSec) },
+      ]
+      const wsOv = XLSX.utils.json_to_sheet(ovRows)
+      wsOv['!cols'] = [{ wch: 28 }, { wch: 20 }]
+      XLSX.utils.book_append_sheet(wb, wsOv, 'Tổng quan')
 
-    const filename = `bao-cao-${tournament?.name?.replace(/\s+/g, '-') ?? id}.xlsx`
-    XLSX.writeFile(wb, filename)
+      const filename = `bao-cao-${tournament?.name?.replace(/\s+/g, '-') ?? id}.xlsx`
+      XLSX.writeFile(wb, filename)
+      setExporting(false)
+    }, 600)
   }
 
   function toggleSort(key) {
@@ -205,11 +210,20 @@ export default function TournamentReportPage() {
         <FeatureGate feature="export_data" fallback={<UpgradePrompt feature="export_data" compact />}>
           <button
             onClick={exportExcel}
-            disabled={playerStats.length === 0}
+            disabled={playerStats.length === 0 || exporting}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 text-white font-semibold text-sm hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Download className="w-4 h-4" />
-            Xuất Excel
+            {exporting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Đang xuất...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Xuất Excel
+              </>
+            )}
           </button>
         </FeatureGate>
       </div>

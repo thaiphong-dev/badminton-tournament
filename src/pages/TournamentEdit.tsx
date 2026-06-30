@@ -20,7 +20,7 @@ function daysUntil(dateStr) {
 }
 
 // ── File upload widget ────────────────────────────────────────────────────────
-function FileUpload({ label, hint, accept, icon: Icon, file, existingUrl, onSelect, onClear }) {
+function FileUpload({ label, hint, accept, icon: Icon, file, existingUrl, onSelect, onClear, uploading = false }) {
   const ref = useRef(null)
   const hasFile   = !!file
   const hasExisting = !!existingUrl && !file
@@ -28,7 +28,12 @@ function FileUpload({ label, hint, accept, icon: Icon, file, existingUrl, onSele
   return (
     <div>
       <p className="text-sm font-medium text-gray-700 mb-1.5">{label}</p>
-      {hasFile ? (
+      {uploading ? (
+        <div className="flex items-center gap-2.5 px-3 py-3.5 border border-blue-200 bg-blue-50 rounded-xl">
+          <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
+          <span className="text-xs text-blue-600 truncate flex-1 font-medium">Đang tải lên tài liệu...</span>
+        </div>
+      ) : hasFile ? (
         <div className="flex items-center gap-2.5 px-3 py-2.5 border border-blue-200 bg-blue-50 rounded-xl">
           <Icon className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-xs text-blue-700 truncate flex-1">{file.name}</span>
@@ -58,7 +63,7 @@ function FileUpload({ label, hint, accept, icon: Icon, file, existingUrl, onSele
         </button>
       )}
       <input ref={ref} type="file" accept={accept} className="hidden"
-        onChange={e => e.target.files?.[0] && onSelect(e.target.files[0])} />
+        onChange={e => e.target.files?.[0] && onSelect(e.target.files[0])} disabled={uploading} />
     </div>
   )
 }
@@ -541,6 +546,7 @@ export default function TournamentEdit() {
                   existingUrl={tournament.regulations_url}
                   onSelect={setRegFile}
                   onClear={() => setRegFile(null)}
+                  uploading={saving}
                 />
 
                 <FileUpload
@@ -552,6 +558,7 @@ export default function TournamentEdit() {
                   existingUrl={tournament.chat_qr_url}
                   onSelect={setQrFile}
                   onClear={() => setQrFile(null)}
+                  uploading={saving}
                 />
               </div>
             </section>

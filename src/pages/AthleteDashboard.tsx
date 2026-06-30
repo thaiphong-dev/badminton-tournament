@@ -7,6 +7,7 @@ import { DISCIPLINE_LABELS, DISCIPLINE_ICONS } from '@/lib/constants'
 import { cn } from '@/lib/utils/cn'
 import { showToast } from '@/lib/hooks/useApiError'
 import PushSubscribeButton from '@/components/ui/PushSubscribeButton'
+import { Skeleton, SkeletonLine, SkeletonCircle } from '@/components/ui/Skeleton'
 import { useI18n } from '@/i18n'
 
 // ── Module-level constants ────────────────────────────────────────────────────
@@ -807,8 +808,31 @@ function ProfileTab({ profile: initProfile }) {
 
 function LoadingBox() {
   return (
-    <div className="flex justify-center py-16">
-      <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+    <div className="space-y-6 py-6">
+      {/* Mini banner skeleton */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <SkeletonCircle size="sm" />
+          <div className="space-y-1.5 flex-1">
+            <SkeletonLine width="1/4" className="h-4" />
+            <SkeletonLine width="1/2" className="h-3.5" />
+          </div>
+        </div>
+      </div>
+
+      {/* Grid skeleton */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {[...Array(2)].map((_, i) => (
+          <div key={i} className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3 shadow-sm">
+            <div className="flex justify-between items-center">
+              <Skeleton className="w-24 h-5" />
+              <Skeleton className="w-16 h-5 rounded-full" />
+            </div>
+            <SkeletonLine width="3/4" />
+            <SkeletonLine width="1/2" />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

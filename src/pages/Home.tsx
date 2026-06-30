@@ -10,6 +10,7 @@ import { usePlan } from '@/lib/hooks/usePlan'
 import { useFeatures } from '@/lib/hooks/useFeatures'
 import { useFeatureRegistry } from '@/lib/hooks/useFeatureRegistry'
 import { useI18n } from '@/i18n'
+import { TournamentCardSkeleton } from '@/components/ui/Skeleton'
 import Badge from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -349,8 +350,10 @@ export default function Home() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <TournamentCardSkeleton key={i} />
+          ))}
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
