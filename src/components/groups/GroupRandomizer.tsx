@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Shuffle, RefreshCw, CheckCircle, AlertCircle, ChevronRight, Users, ImageDown } from 'lucide-react'
 import { randomizeGroups } from '@/lib/utils/groupRandomizer'
 import { saveGroupsAndMatches } from '@/lib/utils/matchScheduler'
@@ -18,6 +18,12 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
   // Use event config when available (per-event flow), fall back to tournament (legacy)
   const numGroups    = event?.num_groups ?? tournament?.num_groups ?? 4
   const avoidSameClub = event?.avoid_same_club ?? tournament?.avoid_same_club ?? true
+  const [localAvoidSameClub, setLocalAvoidSameClub] = useState(avoidSameClub)
+
+  useEffect(() => {
+    setLocalAvoidSameClub(avoidSameClub)
+  }, [avoidSameClub])
+
   const eventId      = event?.id ?? null
   const clubColorMap = buildClubColorMap(players)
 
@@ -45,7 +51,7 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
       setError(`Cần ít nhất ${numGroups} VĐV để tạo ${numGroups} bảng (hiện có ${players.length}).`)
       return
     }
-    const result = randomizeGroups(players, numGroups, avoidSameClub)
+    const result = randomizeGroups(players, numGroups, localAvoidSameClub)
     setGroups(result)
     setPhase('preview')
   }
@@ -72,14 +78,25 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
           <Shuffle className="w-8 h-8 text-blue-500" />
         </div>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Phân bảng tự động</h3>
-        <p className="text-gray-500 text-sm mb-1">
-          {players.length} VĐV → {numGroups} bảng · {avoidSameClub ? 'Đảm bảo không trùng CLB' : 'Không ràng buộc CLB'}
+        <p className="text-gray-500 text-sm mb-4">
+          {players.length} VĐV → {numGroups} bảng
         </p>
-        {avoidSameClub && (
-          <p className="text-gray-400 text-xs mb-8">
-            VĐV "Tự do" có thể cùng bảng với nhau
+        <div className="flex flex-col items-center justify-center gap-1 mb-8">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={localAvoidSameClub}
+              onChange={e => setLocalAvoidSameClub(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Ưu tiên xếp khác bảng cho VĐV cùng CLB</span>
+          </label>
+          <p className="text-xs text-gray-400">
+            {localAvoidSameClub
+              ? 'Hệ thống sẽ cố gắng phân chia VĐV cùng câu lạc bộ vào các bảng đấu khác nhau.'
+              : 'Phân bảng ngẫu nhiên không xét yếu tố câu lạc bộ.'}
           </p>
-        )}
+        </div>
 
         {error && (
           <div className="flex items-center justify-center gap-2 mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 max-w-md mx-auto">
