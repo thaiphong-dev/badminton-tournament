@@ -186,6 +186,8 @@ export function defaultEventConfig() {
     num_groups: 4,
     num_first_place_qualify: 4,
     num_second_place_qualify: 0,
+    num_third_place_qualify: 0,
+    avoid_same_club: true,
     scoring_rules: { ...DEFAULT_EVENT_SCORING_RULES },
   }
 }
@@ -204,8 +206,8 @@ export function nextPowerOfTwo(n) {
  * Check whether the total qualify count is a clean power of 2.
  * Returns true if OK, false if bracket size would be awkward.
  */
-export function isValidBracketSize(numFirst, numSecond) {
-  const total = numFirst + numSecond
+export function isValidBracketSize(numFirst, numSecond, numThird = 0) {
+  const total = numFirst + numSecond + numThird
   if (total <= 0) return false
   return (total & (total - 1)) === 0  // bitwise power-of-2 check
 }

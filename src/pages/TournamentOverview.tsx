@@ -956,7 +956,7 @@ function EventCard({ event, tournamentId, matchStats, champion, playerCount = 0,
                 </span>
                 <span className="flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
-                  {t('overview.card.qualifyKnockout', { n: (event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0) })}
+                  {t('overview.card.qualifyKnockout', { n: (event.num_first_place_qualify ?? 0) + (event.num_second_place_qualify ?? 0) + (event.num_third_place_qualify ?? 0) })}
                 </span>
               </>
             ) : event.format === 'knockout_only' ? (
@@ -1173,6 +1173,8 @@ function CloneTournamentModal({ tournament, events, profile, onClose, onCloned, 
           num_courts:                     tournament.num_courts,
           num_first_place_qualify:        tournament.num_first_place_qualify,
           num_second_place_qualify:       tournament.num_second_place_qualify,
+          num_third_place_qualify:        tournament.num_third_place_qualify ?? 0,
+          avoid_same_club:                tournament.avoid_same_club ?? true,
           require_player_code:            tournament.require_player_code,
           attendance_enabled:             tournament.attendance_enabled,
         })
@@ -1192,6 +1194,8 @@ function CloneTournamentModal({ tournament, events, profile, onClose, onCloned, 
             scoring_rules:            e.scoring_rules,
             num_first_place_qualify:  e.num_first_place_qualify,
             num_second_place_qualify: e.num_second_place_qualify,
+            num_third_place_qualify:  e.num_third_place_qualify ?? 0,
+            avoid_same_club:          e.avoid_same_club ?? true,
             sort_order:               e.sort_order,
             require_player_code:      e.require_player_code,
             attendance_enabled:       e.attendance_enabled,

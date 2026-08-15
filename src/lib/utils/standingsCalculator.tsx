@@ -208,7 +208,23 @@ export async function updateGroupStandingsInDB(groupId) {
   if (gpErr) throw gpErr
 
   const players = groupPlayers.map(gp => gp.players).filter(Boolean)
-  const standings = calculateStandings(matches, players)
+
+  let tiebreakerMode = 'bwf'
+  try {
+    const { data: groupData } = await supabase
+      .from('groups')
+      .select('event_id, events(tiebreaker_mode)')
+      .eq('id', groupId)
+      .single()
+
+    if (groupData?.events && !Array.isArray(groupData.events)) {
+      tiebreakerMode = (groupData.events as any).tiebreaker_mode ?? 'bwf'
+    }
+  } catch (err) {
+    console.warn('Failed to fetch tiebreaker_mode, falling back to BWF:', err)
+  }
+
+  const standings = calculateStandings(matches, players, { tiebreakerMode })
 
   // Update each group_player row in parallel
   await Promise.all(

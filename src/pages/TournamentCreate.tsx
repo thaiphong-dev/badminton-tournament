@@ -313,6 +313,8 @@ export default function TournamentCreate() {
           num_groups:                4,
           num_first_place_qualify:   4,
           num_second_place_qualify:  0,
+          num_third_place_qualify:   0,
+          avoid_same_club:           true,
           scoring_rules:             DEFAULT_EVENT_SCORING_RULES,
           sort_order:                idx,
           max_teams:                 maxTeamsMap[d.value] ?? null,

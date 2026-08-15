@@ -117,7 +117,14 @@ export function pickGroupForPlayer(player, currentGroups, maxGroupSize) {
  * @param {number} numGroups - Number of groups
  * @returns {Array} Array of groups (each group = array of player objects)
  */
-export function randomizeGroups(players, numGroups = 12) {
+export function randomizeGroups(players, numGroups = 12, avoidSameClub = true) {
+  if (!avoidSameClub) {
+    const shuffled = [...players].sort(() => Math.random() - 0.5)
+    const groups   = Array.from({ length: numGroups }, () => [])
+    shuffled.forEach((player, idx) => groups[idx % numGroups].push(player))
+    return groups
+  }
+
   const MAX_ATTEMPTS = 50
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

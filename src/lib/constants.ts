@@ -113,6 +113,8 @@ export const DEFAULT_TOURNAMENT_CONFIG = {
   num_groups: 12,
   num_first_place_qualify: 12,
   num_second_place_qualify: 4,
+  num_third_place_qualify: 0,
+  avoid_same_club: true,
   scoring_rules: DEFAULT_SCORING_RULES,
 }
 

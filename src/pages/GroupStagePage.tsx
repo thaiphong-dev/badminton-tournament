@@ -329,7 +329,11 @@ export default function GroupStagePage() {
               <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
               <div>
                 <h2 className="text-base font-bold text-gray-900">Phân bảng</h2>
-                <p className="text-sm text-gray-500">Đảm bảo không trùng CLB trong cùng bảng</p>
+                <p className="text-sm text-gray-500">
+                  {(event ?? tournament).avoid_same_club ?? true
+                    ? 'Đảm bảo không trùng CLB trong cùng bảng'
+                    : 'Không ràng buộc CLB trong cùng bảng'}
+                </p>
               </div>
             </div>
 

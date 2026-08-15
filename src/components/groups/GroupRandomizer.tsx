@@ -16,7 +16,8 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
   const gridRef = useRef(null)
 
   // Use event config when available (per-event flow), fall back to tournament (legacy)
-  const numGroups    = (event ?? tournament).num_groups ?? tournament.num_groups
+  const numGroups    = event?.num_groups ?? tournament?.num_groups ?? 4
+  const avoidSameClub = event?.avoid_same_club ?? tournament?.avoid_same_club ?? true
   const eventId      = event?.id ?? null
   const clubColorMap = buildClubColorMap(players)
 
@@ -44,7 +45,7 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
       setError(`Cần ít nhất ${numGroups} VĐV để tạo ${numGroups} bảng (hiện có ${players.length}).`)
       return
     }
-    const result = randomizeGroups(players, numGroups)
+    const result = randomizeGroups(players, numGroups, avoidSameClub)
     setGroups(result)
     setPhase('preview')
   }
@@ -72,11 +73,13 @@ export default function GroupRandomizer({ tournament, event, players, onConfirme
         </div>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Phân bảng tự động</h3>
         <p className="text-gray-500 text-sm mb-1">
-          {players.length} VĐV → {numGroups} bảng · Đảm bảo không trùng CLB
+          {players.length} VĐV → {numGroups} bảng · {avoidSameClub ? 'Đảm bảo không trùng CLB' : 'Không ràng buộc CLB'}
         </p>
-        <p className="text-gray-400 text-xs mb-8">
-          VĐV "Tự do" có thể cùng bảng với nhau
-        </p>
+        {avoidSameClub && (
+          <p className="text-gray-400 text-xs mb-8">
+            VĐV "Tự do" có thể cùng bảng với nhau
+          </p>
+        )}
 
         {error && (
           <div className="flex items-center justify-center gap-2 mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 max-w-md mx-auto">

@@ -337,6 +337,7 @@ export default {
       numGroups:      'Groups',
       numFirst:       '1st place qualify',
       numSecond:      'Best 2nd qualify',
+      numThird:       'Best 3rd qualify',
       bracketOk:      'Total advancing: {n} players — valid bracket size',
       bracketBad:     'Total {n} is not a power of 2. Suggestion: take {suggested} (or {half}) for an even bracket.',
     },

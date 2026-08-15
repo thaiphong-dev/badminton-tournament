@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
  * @param {number} numSecond  - how many best rank-2 players to take
  * @returns {Array} qualified players with seed assigned
  */
-export function selectQualifiedPlayers(allRecords, numFirst, numSecond) {
+export function selectQualifiedPlayers(allRecords, numFirst, numSecond, numThird = 0) {
   const firstPlace = allRecords
     .filter(r => r.rank === 1)
     .sort((a, b) => a.group_number - b.group_number)
@@ -36,11 +36,36 @@ export function selectQualifiedPlayers(allRecords, numFirst, numSecond) {
       if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
       return b.score_diff_rate - a.score_diff_rate
     })
-    .slice(0, numSecond)
+    .slice(0, Math.max(0, numSecond))
+
+  const thirdPlace = allRecords
+    .filter(r => r.rank === 3)
+    .map(r => {
+      const matchesPlayed = r.wins + r.losses
+      return {
+        ...r,
+        win_rate:        matchesPlayed > 0 ? r.wins / matchesPlayed : 0,
+        sets_ratio:      (r.sets_for + r.sets_against) > 0
+                           ? r.sets_for / (r.sets_for + r.sets_against)
+                           : 0,
+        score_ratio:     (r.score_for + r.score_against) > 0
+                           ? r.score_for / (r.score_for + r.score_against)
+                           : 0,
+        score_diff_rate: matchesPlayed > 0 ? r.score_diff / matchesPlayed : 0,
+      }
+    })
+    .sort((a, b) => {
+      if (b.win_rate        !== a.win_rate)        return b.win_rate        - a.win_rate
+      if (b.sets_ratio      !== a.sets_ratio)      return b.sets_ratio      - a.sets_ratio
+      if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
+      return b.score_diff_rate - a.score_diff_rate
+    })
+    .slice(0, Math.max(0, numThird))
 
   return [
     ...firstPlace.map(p => ({ ...p, seed: p.group_number, qualified_as: 'Nhất bảng' })),
     ...secondPlace.map((p, i) => ({ ...p, seed: numFirst + i + 1, qualified_as: 'Nhì bảng' })),
+    ...thirdPlace.map((p, i) => ({ ...p, seed: numFirst + numSecond + i + 1, qualified_as: 'Ba bảng' })),
   ]
 }
 
@@ -58,7 +83,7 @@ export function selectQualifiedPlayers(allRecords, numFirst, numSecond) {
  * @param {string} [eventId]  - optional: scope to this event
  * @returns {Array} qualified players sorted by seed
  */
-export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond = 4, eventId) {
+export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond = 4, numThird = 0, eventId) {
   // Build group query — scope by event when available
   let query = supabase
     .from('groups')
@@ -109,7 +134,7 @@ export async function getQualifiedPlayers(tournamentId, numFirst = 12, numSecond
     }))
   )
 
-  return selectQualifiedPlayers(allRecords, numFirst, numSecond)
+  return selectQualifiedPlayers(allRecords, numFirst, numSecond, numThird)
 }
 
 /**

@@ -296,7 +296,8 @@ export default function KnockoutPage() {
       } else {
         const numFirst  = ev?.num_first_place_qualify  ?? t.num_first_place_qualify  ?? 12
         const numSecond = ev?.num_second_place_qualify ?? t.num_second_place_qualify ?? 4
-        qualified = await getQualifiedPlayers(t.id, numFirst, numSecond, evId)
+        const numThird  = ev?.num_third_place_qualify  ?? t.num_third_place_qualify  ?? 0
+        qualified = await getQualifiedPlayers(t.id, numFirst, numSecond, numThird, evId)
         if (qualified.length === 0)
           throw new Error('Chưa có VĐV đủ điều kiện. Hoàn thành vòng bảng trước.')
       }

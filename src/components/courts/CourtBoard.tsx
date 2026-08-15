@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight, ShieldCheck, PhoneOff, Clock, AlertTriangle, PhoneCall, RotateCcw, WifiOff, Phone } from 'lucide-react'
+import { Play, Zap, X, Pencil, ArrowLeftRight, Trash2, PlusCircle, ChevronLeft, ChevronRight, ShieldCheck, PhoneOff, Clock, AlertTriangle, PhoneCall, RotateCcw, WifiOff, Phone, MessageSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useBTCRealtime } from '@/lib/hooks/useBTCRealtime'
@@ -1191,15 +1191,24 @@ function CallAthleteModal({ courtNum, results, onClose }) {
                 ) : (
                   <p className="text-xs text-gray-400 mt-0.5">Chưa có tài khoản — gọi thủ công</p>
                 )}
-                {/* Phone link */}
+                {/* Phone & SMS link */}
                 {!r.hasSubscription && r.phone && (
-                  <a
-                    href={`tel:${r.phone}`}
-                    className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                  >
-                    <Phone className="w-3 h-3" />
-                    {r.phone}
-                  </a>
+                  <div className="flex gap-3 mt-1">
+                    <a
+                      href={`tel:${r.phone}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      <Phone className="w-3 h-3" />
+                      Gọi: {r.phone}
+                    </a>
+                    <a
+                      href={`sms:${r.phone}?body=${encodeURIComponent(`Moi VDV ${r.name} vao san ${courtNum} de thi dau.`)}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-700"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      Nhắn SMS
+                    </a>
+                  </div>
                 )}
                 {!r.hasSubscription && !r.phone && (
                   <p className="text-xs text-gray-300 mt-0.5 italic">Không có số điện thoại</p>

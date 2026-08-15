@@ -22,16 +22,17 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
   const [manualPairings, setManualPairings] = useState(null) // [{p1Id,p2Id}] | null
   const [error,        setError]        = useState(null)
 
-  const numFirst  = (event ?? tournament).num_first_place_qualify  ?? 12
-  const numSecond = (event ?? tournament).num_second_place_qualify ?? 4
-  const total     = numFirst + numSecond
+  const numFirst  = event?.num_first_place_qualify  ?? tournament?.num_first_place_qualify  ?? 12
+  const numSecond = event?.num_second_place_qualify ?? tournament?.num_second_place_qualify ?? 4
+  const numThird  = event?.num_third_place_qualify  ?? tournament?.num_third_place_qualify  ?? 0
+  const total     = numFirst + numSecond + numThird
   const eventId   = event?.id ?? null
 
   async function handleLoad() {
     setPhase('loading')
     setError(null)
     try {
-      const players = await getQualifiedPlayers(tournament.id, numFirst, numSecond, eventId)
+      const players = await getQualifiedPlayers(tournament.id, numFirst, numSecond, numThird, eventId)
       setQualified(players.sort((a, b) => a.seed - b.seed))
       setManualPairings(null)
       setPhase('preview')
@@ -73,7 +74,9 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
             <h3 className="font-bold text-blue-900">Vòng bảng hoàn thành!</h3>
           </div>
           <p className="text-sm text-blue-700">
-            Chọn <strong>{numFirst}</strong> nhất bảng + <strong>{numSecond}</strong> nhì bảng tốt nhất
+            Chọn <strong>{numFirst}</strong> nhất bảng
+            {numSecond > 0 ? ` + ${numSecond} nhì bảng tốt nhất` : ''}
+            {numThird > 0 ? ` + ${numThird} ba bảng tốt nhất` : ''}
             → <strong>{total}</strong> VĐV vào vòng knockout
           </p>
         </div>
@@ -107,19 +110,29 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
         <div className="space-y-4">
 
           {/* Qualified player list */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={cn('grid gap-4 sm:grid-cols-2', numThird > 0 && 'lg:grid-cols-3')}>
             <QualifyGroup
               title={`${numFirst} Nhất bảng`}
               icon={<Crown className="w-4 h-4 text-yellow-600" />}
               color="yellow"
               players={qualified.filter(p => p.qualified_as === 'Nhất bảng')}
             />
-            <QualifyGroup
-              title={`${numSecond} Nhì bảng tốt nhất`}
-              icon={<Medal className="w-4 h-4 text-blue-600" />}
-              color="blue"
-              players={qualified.filter(p => p.qualified_as === 'Nhì bảng')}
-            />
+            {numSecond > 0 && (
+              <QualifyGroup
+                title={`${numSecond} Nhì bảng tốt nhất`}
+                icon={<Medal className="w-4 h-4 text-blue-600" />}
+                color="blue"
+                players={qualified.filter(p => p.qualified_as === 'Nhì bảng')}
+              />
+            )}
+            {numThird > 0 && (
+              <QualifyGroup
+                title={`${numThird} Ba bảng tốt nhất`}
+                icon={<Medal className="w-4 h-4 text-emerald-600" />}
+                color="emerald"
+                players={qualified.filter(p => p.qualified_as === 'Ba bảng')}
+              />
+            )}
           </div>
 
           {/* ── Pairing mode toggle ── */}
@@ -156,7 +169,9 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
             {pairingMode === 'auto' && (
               <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
                 <p className="text-xs text-gray-500">
-                  Seed 1–{numFirst} = nhất bảng (theo thứ tự bảng) · Seed {numFirst + 1}–{total} = nhì bảng tốt nhất
+                  Seed 1–{numFirst} = nhất bảng (theo thứ tự bảng)
+                  {numSecond > 0 ? ` · Seed ${numFirst + 1}–${numFirst + numSecond} = nhì bảng tốt nhất` : ''}
+                  {numThird > 0 ? ` · Seed ${numFirst + numSecond + 1}–${total} = ba bảng tốt nhất` : ''}
                 </p>
               </div>
             )}
@@ -226,6 +241,8 @@ function ModeTab({ active, onClick, icon, label, desc, right }) {
 function QualifyGroup({ title, icon, color, players }) {
   const headerClass = color === 'yellow'
     ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+    : color === 'emerald'
+    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
     : 'bg-blue-50 border-blue-200 text-blue-800'
 
   return (

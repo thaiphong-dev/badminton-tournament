@@ -171,6 +171,8 @@ export default function EventSetup() {
   const [numGroups, setNumGroups]               = useState(4)
   const [numFirst, setNumFirst]                 = useState(4)
   const [numSecond, setNumSecond]               = useState(0)
+  const [numThird, setNumThird]                 = useState(0)
+  const [avoidSameClub, setAvoidSameClub]       = useState(true)
   const [requirePlayerCode, setRequirePlayerCode] = useState(false)
   const [attendanceEnabled, setAttendanceEnabled] = useState(false)
 
@@ -195,6 +197,8 @@ export default function EventSetup() {
     setNumGroups(ev.num_groups ?? 4)
     setNumFirst(ev.num_first_place_qualify ?? 4)
     setNumSecond(ev.num_second_place_qualify ?? 0)
+    setNumThird(ev.num_third_place_qualify ?? 0)
+    setAvoidSameClub(ev.avoid_same_club ?? true)
     setRequirePlayerCode(ev.require_player_code ?? false)
     setAttendanceEnabled(ev.attendance_enabled ?? false)
     setAgeCategory(ev.age_category ?? 'open')
@@ -281,6 +285,8 @@ export default function EventSetup() {
           num_groups:                (format === 'group_then_knockout' || format === 'round_robin') ? Number(numGroups) : null,
           num_first_place_qualify:   format === 'group_then_knockout' ? Number(numFirst)  : null,
           num_second_place_qualify:  format === 'group_then_knockout' ? Number(numSecond) : null,
+          num_third_place_qualify:   format === 'group_then_knockout' ? Number(numThird)  : null,
+          avoid_same_club:           avoidSameClub,
           scoring_rules:             scoringRules,
           require_player_code:       requirePlayerCode,
           attendance_enabled:        attendanceEnabled,
@@ -312,8 +318,8 @@ export default function EventSetup() {
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const totalQualify  = Number(numFirst) + Number(numSecond)
-  const bracketOk     = format === 'knockout_only' || format === 'round_robin' || isValidBracketSize(Number(numFirst), Number(numSecond))
+  const totalQualify  = Number(numFirst) + Number(numSecond) + Number(numThird)
+  const bracketOk     = format === 'knockout_only' || format === 'round_robin' || isValidBracketSize(Number(numFirst), Number(numSecond), Number(numThird))
   const suggestedNext = bracketOk ? null : nextPowerOfTwo(totalQualify)
 
   // Age restriction helper variables
@@ -404,29 +410,52 @@ export default function EventSetup() {
         {(format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT || format === FORMAT_OPTIONS.ROUND_ROBIN) && (
           <Section icon={LayoutList} title={t('eventSetup.section.groupConfig')}>
             {format === FORMAT_OPTIONS.GROUP_THEN_KNOCKOUT ? (
-              <div className="grid grid-cols-3 gap-4">
-                <Input
-                  label={t('eventSetup.groups.numGroups')}
-                  type="number"
-                  min="1"
-                  max="32"
-                  value={numGroups}
-                  onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
-                />
-                <Input
-                  label={t('eventSetup.groups.numFirst')}
-                  type="number"
-                  min="1"
-                  value={numFirst}
-                  onChange={e => { setNumFirst(e.target.value); setSaved(false) }}
-                />
-                <Input
-                  label={t('eventSetup.groups.numSecond')}
-                  type="number"
-                  min="0"
-                  value={numSecond}
-                  onChange={e => { setNumSecond(e.target.value); setSaved(false) }}
-                />
+              <div className="space-y-4">
+                <div className="grid grid-cols-4 gap-4">
+                  <Input
+                    label={t('eventSetup.groups.numGroups')}
+                    type="number"
+                    min="1"
+                    max="32"
+                    value={numGroups}
+                    onChange={e => { setNumGroups(e.target.value); setSaved(false) }}
+                  />
+                  <Input
+                    label={t('eventSetup.groups.numFirst')}
+                    type="number"
+                    min="1"
+                    value={numFirst}
+                    onChange={e => { setNumFirst(e.target.value); setSaved(false) }}
+                  />
+                  <Input
+                    label={t('eventSetup.groups.numSecond')}
+                    type="number"
+                    min="0"
+                    value={numSecond}
+                    onChange={e => { setNumSecond(e.target.value); setSaved(false) }}
+                  />
+                  <Input
+                    label={t('eventSetup.groups.numThird')}
+                    type="number"
+                    min="0"
+                    value={numThird}
+                    onChange={e => { setNumThird(e.target.value); setSaved(false) }}
+                  />
+                </div>
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={avoidSameClub}
+                      onChange={e => { setAvoidSameClub(e.target.checked); setSaved(false) }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Ưu tiên xếp khác bảng cho VĐV cùng CLB</span>
+                  </label>
+                  <p className="text-xs text-gray-400 mt-1 pl-6">
+                    Hệ thống sẽ cố gắng xếp các VĐV từ cùng một câu lạc bộ vào các bảng đấu khác nhau để tránh đụng độ sớm.
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-4">

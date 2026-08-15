@@ -337,6 +337,7 @@ export default {
       numGroups:      'Số bảng',
       numFirst:       'Nhất bảng lấy',
       numSecond:      'Nhì tốt nhất lấy',
+      numThird:       'Ba tốt nhất lấy',
       bracketOk:      'Tổng vào knockout: {n} VĐV — hợp lệ cho bracket',
       bracketBad:     'Tổng {n} không phải lũy thừa 2. Gợi ý: lấy {suggested} người (hoặc {half}) để bracket đều.',
     },

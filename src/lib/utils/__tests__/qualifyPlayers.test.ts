@@ -93,4 +93,23 @@ describe('selectQualifiedPlayers', () => {
     // a: sets_ratio = 5/6 ≈ 0.833, b: sets_ratio = 4/6 ≈ 0.667 → a thắng
     expect(result[0].player_id).toBe('a')
   })
+
+  it('lấy đúng top numThird từ rank-3 theo win_rate giảm dần và gán seed đúng', () => {
+    const records = [
+      makeRecord('p1', 1, 1),
+      makeRecord('g1_2', 2, 1),
+      makeRecord('g1_3', 3, 1, { wins: 2, losses: 1, sets_for: 4, sets_against: 2, score_for: 80, score_against: 60, score_diff: 20 }),
+      makeRecord('g2_3', 3, 2, { wins: 0, losses: 3, sets_for: 0, sets_against: 6, score_for: 30, score_against: 120, score_diff: -90 }),
+      makeRecord('g3_3', 3, 3, { wins: 1, losses: 2, sets_for: 2, sets_against: 4, score_for: 50, score_against: 80, score_diff: -30 }),
+    ]
+    // numFirst=1, numSecond=1, numThird=2
+    const result = selectQualifiedPlayers(records, 1, 1, 2)
+    const thirdPlaceResults = result.filter(r => r.qualified_as === 'Ba bảng')
+    expect(thirdPlaceResults).toHaveLength(2)
+    // g1_3 (win_rate 0.67) và g3_3 (win_rate 0.33) -> g2_3 (win_rate 0.0) bị loại
+    expect(thirdPlaceResults.map(r => r.player_id)).toEqual(['g1_3', 'g3_3'])
+    // seed = numFirst + numSecond + i + 1
+    expect(thirdPlaceResults.find(r => r.player_id === 'g1_3').seed).toBe(3)
+    expect(thirdPlaceResults.find(r => r.player_id === 'g3_3').seed).toBe(4)
+  })
 })
