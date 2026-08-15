@@ -55,6 +55,13 @@ export default function DrawLottery({ tournament, event, players, onConfirmed })
   const numGroups = (event ?? tournament).num_groups ?? tournament.num_groups
   const eventId   = event?.id ?? null
 
+  const avoidSameClubProp = event?.avoid_same_club ?? tournament?.avoid_same_club ?? true
+  const [localAvoidSameClub, setLocalAvoidSameClub] = useState(avoidSameClubProp)
+
+  useEffect(() => {
+    setLocalAvoidSameClub(avoidSameClubProp)
+  }, [avoidSameClubProp])
+
   const [undrawn, setUndrawn]         = useState(() => players.map((p, i) => ({ ...p, drawNum: i + 1 })))
   const [draftGroups, setDraftGroups] = useState(() => Array.from({ length: numGroups }, () => []))
   // Map playerId → groupIdx for drawn players
@@ -75,16 +82,28 @@ export default function DrawLottery({ tournament, event, players, onConfirmed })
 
   function handleDraw() {
     if (!undrawn.length || phase !== 'idle' || currentGroupIdx < 0) return
-    const player   = undrawn[Math.floor(Math.random() * undrawn.length)]
     const groupIdx = currentGroupIdx
+    
+    let candidates = [...undrawn]
+    if (localAvoidSameClub) {
+      const currentGroup = draftGroups[groupIdx] || []
+      const currentClubs = currentGroup.map(p => p.club).filter(c => c && c !== 'Tự do')
+      const filtered = undrawn.filter(p => !p.club || p.club === 'Tự do' || !currentClubs.includes(p.club))
+      if (filtered.length > 0) {
+        candidates = filtered
+      }
+    }
+
+    const player   = candidates[Math.floor(Math.random() * candidates.length)]
+    const groupIdxValue = groupIdx
     setPhase('spinning')
     spin(player, () => {
-      setLastDraw({ player, groupIdx })
+      setLastDraw({ player, groupIdx: groupIdxValue })
       setPhase('reveal')
       setTimeout(() => {
         setUndrawn(prev => prev.filter(p => p.id !== player.id))
-        setDraftGroups(prev => { const n = prev.map(g => [...g]); n[groupIdx] = [...n[groupIdx], player]; return n })
-        setDrawnMap(prev => ({ ...prev, [player.id]: groupIdx }))
+        setDraftGroups(prev => { const n = prev.map(g => [...g]); n[groupIdxValue] = [...n[groupIdxValue], player]; return n })
+        setDrawnMap(prev => ({ ...prev, [player.id]: groupIdxValue }))
         setPhase(undrawn.length === 1 ? 'done' : 'idle')
       }, 1100)
     })
@@ -168,6 +187,23 @@ export default function DrawLottery({ tournament, event, players, onConfirmed })
 
         {/* ── RIGHT: Reel + Groups ── */}
         <div className="space-y-4">
+
+          {/* Avoid Same Club Toggle */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localAvoidSameClub}
+                onChange={e => setLocalAvoidSameClub(e.target.checked)}
+                disabled={drawn > 0}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+              />
+              <span>Ưu tiên xếp khác bảng cho VĐV cùng CLB</span>
+            </label>
+            <span className="text-xs text-gray-400">
+              {drawn > 0 ? 'Đang bốc thăm' : 'Chưa bốc thăm'}
+            </span>
+          </div>
 
           {/* Current group banner */}
           {!allDrawn && currentGroupIdx >= 0 && (
