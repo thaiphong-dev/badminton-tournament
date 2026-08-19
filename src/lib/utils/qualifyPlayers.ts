@@ -160,3 +160,86 @@ export async function confirmQualification(tournamentId, eventId) {
     if (error) throw error
   }
 }
+
+/**
+ * Get all third-place candidates ranked by tiebreakers.
+ *
+ * @param {string} tournamentId
+ * @param {string} [eventId]
+ * @returns {Array} all third-place players sorted by tiebreakers
+ */
+export async function getThirdPlaceCandidates(tournamentId, eventId = null) {
+  let query = supabase
+    .from('groups')
+    .select(`
+      id,
+      group_number,
+      group_players (
+        rank,
+        points,
+        wins,
+        losses,
+        sets_for,
+        sets_against,
+        score_for,
+        score_against,
+        score_diff,
+        players ( id, name, club )
+      )
+    `)
+    .order('group_number')
+
+  if (eventId) {
+    query = query.eq('event_id', eventId)
+  } else {
+    query = query.eq('tournament_id', tournamentId)
+  }
+
+  const { data: groups, error } = await query
+  if (error) throw error
+
+  // Flatten: one record per group-player pair
+  const allRecords = groups.flatMap(g =>
+    (g.group_players || []).map(gp => ({
+      player_id:    gp.players.id,
+      player_name:  gp.players.name,
+      club:         gp.players.club,
+      rank:         gp.rank,
+      points:       gp.points,
+      wins:         gp.wins,
+      losses:       gp.losses,
+      sets_for:     gp.sets_for,
+      sets_against: gp.sets_against,
+      score_for:    gp.score_for,
+      score_against: gp.score_against,
+      score_diff:   gp.score_diff,
+      group_number: g.group_number,
+      group_id:     g.id,
+    }))
+  )
+
+  const thirdPlace = allRecords
+    .filter(r => r.rank === 3)
+    .map(r => {
+      const matchesPlayed = r.wins + r.losses
+      return {
+        ...r,
+        win_rate:        matchesPlayed > 0 ? r.wins / matchesPlayed : 0,
+        sets_ratio:      (r.sets_for + r.sets_against) > 0
+                           ? r.sets_for / (r.sets_for + r.sets_against)
+                           : 0,
+        score_ratio:     (r.score_for + r.score_against) > 0
+                           ? r.score_for / (r.score_for + r.score_against)
+                           : 0,
+        score_diff_rate: matchesPlayed > 0 ? r.score_diff / matchesPlayed : 0,
+      }
+    })
+    .sort((a, b) => {
+      if (b.win_rate        !== a.win_rate)        return b.win_rate        - a.win_rate
+      if (b.sets_ratio      !== a.sets_ratio)      return b.sets_ratio      - a.sets_ratio
+      if (b.score_ratio     !== a.score_ratio)     return b.score_ratio     - a.score_ratio
+      return b.score_diff_rate - a.score_diff_rate
+    })
+
+  return thirdPlace
+}

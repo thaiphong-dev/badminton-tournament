@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Crown, Medal, Trophy, ChevronRight, AlertCircle, Loader2, Wand2, LayoutGrid } from 'lucide-react'
-import { getQualifiedPlayers, confirmQualification } from '@/lib/utils/qualifyPlayers'
+import { getQualifiedPlayers, confirmQualification, getThirdPlaceCandidates } from '@/lib/utils/qualifyPlayers'
 import { saveKnockoutBracket } from '@/lib/utils/bracketGenerator'
 import BracketBuilder from '@/components/groups/BracketBuilder'
 import Button from '@/components/ui/Button'
@@ -22,6 +22,9 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
   const [manualPairings, setManualPairings] = useState(null) // [{p1Id,p2Id}] | null
   const [error,        setError]        = useState(null)
 
+  const [thirds, setThirds]             = useState([])
+  const [checkedThirdIds, setCheckedThirdIds] = useState(new Set())
+
   const numFirst  = event?.num_first_place_qualify  ?? tournament?.num_first_place_qualify  ?? 12
   const numSecond = event?.num_second_place_qualify ?? tournament?.num_second_place_qualify ?? 4
   const numThird  = event?.num_third_place_qualify  ?? tournament?.num_third_place_qualify  ?? 0
@@ -34,6 +37,14 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
     try {
       const players = await getQualifiedPlayers(tournament.id, numFirst, numSecond, numThird, eventId)
       setQualified(players.sort((a, b) => a.seed - b.seed))
+
+      if (numThird > 0) {
+        const allThirds = await getThirdPlaceCandidates(tournament.id, eventId)
+        setThirds(allThirds)
+        const initialChecked = new Set(allThirds.slice(0, numThird).map(p => p.player_id))
+        setCheckedThirdIds(initialChecked)
+      }
+
       setManualPairings(null)
       setPhase('preview')
     } catch (err) {
@@ -42,16 +53,58 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
     }
   }
 
+  useEffect(() => {
+    if (thirds.length === 0 || numThird === 0) return
+
+    setQualified(prev => {
+      // Keep only first and second place players
+      const nonThird = prev.filter(p => p.qualified_as !== 'Ba bảng')
+      
+      // Filter thirds that are checked
+      const selectedThirds = thirds.filter(p => checkedThirdIds.has(p.player_id))
+      
+      // Map to seed and structure
+      const mappedThirds = selectedThirds.map((p, i) => ({
+        ...p,
+        seed: numFirst + numSecond + i + 1,
+        qualified_as: 'Ba bảng',
+      }))
+      
+      // Return combined list, sorted by seed
+      return [...nonThird, ...mappedThirds].sort((a, b) => a.seed - b.seed)
+    })
+  }, [checkedThirdIds, thirds, numFirst, numSecond, numThird])
+
+  const handleToggleThird = (playerId, isChecked) => {
+    setCheckedThirdIds(prev => {
+      const next = new Set(prev)
+      if (isChecked) {
+        if (next.size >= numThird) {
+          setError(`Bạn chỉ được chọn tối đa ${numThird} đội xếp thứ 3 đi tiếp. Vui lòng bỏ chọn một đội trước khi chọn đội mới.`)
+          return prev
+        }
+        next.add(playerId)
+        setError(null)
+      } else {
+        next.delete(playerId)
+        setError(null)
+      }
+      return next
+    })
+  }
+
   async function handleConfirm() {
     setPhase('confirming')
     setError(null)
     try {
-      if (pairingMode === 'manual') {
-        if (!manualPairings) throw new Error('Vui lòng xếp đủ tất cả các cặp đấu.')
-        // Save bracket with custom pairings BEFORE updating status so KnockoutPage
-        // hits the idempotency guard and reuses this bracket.
-        await saveKnockoutBracket(qualified, tournament.id, eventId, manualPairings)
+      if (pairingMode === 'manual' && !manualPairings) {
+        throw new Error('Vui lòng xếp đủ tất cả các cặp đấu.')
       }
+      
+      // Save bracket with custom selections/pairings BEFORE updating status so KnockoutPage
+      // hits the idempotency guard and reuses this bracket.
+      await saveKnockoutBracket(qualified, tournament.id, eventId, pairingMode === 'manual' ? manualPairings : null)
+      
       await confirmQualification(tournament.id, eventId)
       onConfirmed()
     } catch (err) {
@@ -61,7 +114,8 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
   }
 
   const isPreview    = phase === 'preview' || phase === 'confirming'
-  const canConfirm   = pairingMode === 'auto' || (pairingMode === 'manual' && manualPairings !== null)
+  const isSelectionComplete = numThird === 0 || checkedThirdIds.size === numThird
+  const canConfirm   = (pairingMode === 'auto' || (pairingMode === 'manual' && manualPairings !== null)) && isSelectionComplete
 
   return (
     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 space-y-5">
@@ -127,10 +181,14 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
             )}
             {numThird > 0 && (
               <QualifyGroup
-                title={`${numThird} Ba bảng tốt nhất`}
+                title="Hạng 3 đi tiếp"
                 icon={<Medal className="w-4 h-4 text-emerald-600" />}
                 color="emerald"
-                players={qualified.filter(p => p.qualified_as === 'Ba bảng')}
+                players={thirds}
+                isSelection={true}
+                checkedIds={checkedThirdIds}
+                onToggle={handleToggleThird}
+                maxSelect={numThird}
               />
             )}
           </div>
@@ -176,6 +234,14 @@ export default function QualifySection({ tournament, event, onConfirmed }) {
               </div>
             )}
           </div>
+
+          {/* Warning if selection is incomplete */}
+          {!isSelectionComplete && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-700">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Vui lòng chọn chính xác <strong>{numThird}</strong> đội hạng ba đi tiếp để tiếp tục (đang chọn {checkedThirdIds.size}/{numThird}).</span>
+            </div>
+          )}
 
           {/* Confirm */}
           <div className="flex items-center justify-end pt-1">
@@ -238,7 +304,7 @@ function ModeTab({ active, onClick, icon, label, desc, right }) {
   )
 }
 
-function QualifyGroup({ title, icon, color, players }) {
+function QualifyGroup({ title, icon, color, players, isSelection = false, checkedIds = new Set(), onToggle, maxSelect }) {
   const headerClass = color === 'yellow'
     ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
     : color === 'emerald'
@@ -247,17 +313,40 @@ function QualifyGroup({ title, icon, color, players }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className={cn('flex items-center gap-2 px-4 py-2.5 border-b text-sm font-semibold', headerClass)}>
-        {icon}
-        {title}
+      <div className={cn('flex items-center justify-between px-4 py-2.5 border-b text-sm font-semibold', headerClass)}>
+        <div className="flex items-center gap-2">
+          {icon}
+          {title}
+        </div>
+        {isSelection && maxSelect !== undefined && (
+          <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', 
+            checkedIds.size === maxSelect ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+          )}>
+            Đã chọn: {checkedIds.size}/{maxSelect}
+          </span>
+        )}
       </div>
       <ul className="divide-y divide-gray-50">
-        {players.map(p => {
+        {players.map((p, i) => {
           const diffStr = p.score_diff > 0 ? `+${p.score_diff}` : `${p.score_diff}`
+          const isChecked = isSelection ? checkedIds.has(p.player_id) : true
+
           return (
-            <li key={p.player_id} className="flex items-center justify-between px-4 py-2 gap-2">
+            <li key={p.player_id} className={cn(
+              "flex items-center justify-between px-4 py-2 gap-2 transition-colors",
+              isSelection && (isChecked ? 'bg-emerald-50/20 hover:bg-emerald-50/30' : 'bg-white hover:bg-gray-50')
+            )}>
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs text-gray-400 w-5 shrink-0">{p.seed}</span>
+                {isSelection ? (
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={e => onToggle(p.player_id, e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer mr-1"
+                  />
+                ) : (
+                  <span className="text-xs text-gray-400 w-5 shrink-0">{p.seed}</span>
+                )}
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{p.player_name}</p>
                   <p className="text-xs text-gray-400 truncate">{p.club}</p>
@@ -269,6 +358,9 @@ function QualifyGroup({ title, icon, color, players }) {
                 {p.wins}T {p.losses}B
                 {' · '}
                 {diffStr}
+                {isSelection && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">Top {i + 1} · Bảng {String.fromCharCode(65 + p.group_number - 1)}</p>
+                )}
               </div>
             </li>
           )
