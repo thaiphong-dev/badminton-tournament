@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, startTransition } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Trophy, Crown, Download,
-  AlertCircle, Loader2,
+  AlertCircle, Loader2, LayoutList,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
@@ -222,6 +222,10 @@ export default function ResultsPage() {
   const knockoutHref   = eventId
     ? `/tournament/${id}/event/${eventId}/knockout`
     : `/tournament/${id}/knockout`
+  const hasGroupStage  = (event ? event.format !== 'knockout_only' : tournament?.format !== 'knockout_only')
+  const groupsHref     = eventId
+    ? `/tournament/${id}/event/${eventId}/groups`
+    : `/tournament/${id}/groups`
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -229,10 +233,13 @@ export default function ResultsPage() {
       {/* Breadcrumb (per-event) or back link (legacy) */}
       {eventId ? (
         <Breadcrumb
+          className="mb-6"
           items={[
             { label: 'Trang chủ', href: '/' },
             { label: tournament.name, href: `/tournament/${id}` },
             { label: disciplineLabel, href: `/tournament/${id}/event/${eventId}/setup` },
+            ...(hasGroupStage ? [{ label: 'Vòng bảng', href: groupsHref }] : []),
+            ...(event?.format !== 'round_robin' ? [{ label: 'Knockout', href: knockoutHref }] : []),
             { label: 'Kết quả' },
           ]}
         />
@@ -269,12 +276,24 @@ export default function ResultsPage() {
             </div>
           </div>
 
-          {isCompleted && (
-            <Button onClick={handleExport} loading={exporting} variant="secondary" size="sm">
-              <Download className="w-4 h-4" />
-              Xuất Excel
-            </Button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {hasGroupStage && (
+              <Link
+                to={groupsHref}
+                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-blue-600 border border-gray-200 hover:border-blue-200 bg-white hover:bg-blue-50/50 rounded-lg px-3 py-2 font-medium transition-colors"
+                title="Xem lại danh sách bảng đấu và kết quả vòng bảng"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span>Vòng bảng</span>
+              </Link>
+            )}
+            {isCompleted && (
+              <Button onClick={handleExport} loading={exporting} variant="secondary" size="sm">
+                <Download className="w-4 h-4" />
+                Xuất Excel
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -574,6 +574,9 @@ export default function KnockoutPage() {
     )
   }
 
+  const hasGroupStage = (event ? event.format !== 'knockout_only' : tournament?.format !== 'knockout_only')
+  const groupsHref = eventId ? `/tournament/${id}/event/${eventId}/groups` : `/tournament/${id}/groups`
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
@@ -585,6 +588,7 @@ export default function KnockoutPage() {
             { label: 'Trang chủ', href: '/' },
             { label: tournament?.name, href: `/tournament/${id}` },
             { label: disciplineLabel, href: `/tournament/${id}/event/${eventId}/setup` },
+            ...(hasGroupStage ? [{ label: 'Vòng bảng', href: groupsHref }] : []),
             { label: 'Knockout' },
           ]}
         />
@@ -612,6 +616,16 @@ export default function KnockoutPage() {
             </div>
             <p className="text-sm text-gray-500 mt-1">Vòng Knockout · {matches.length} trận</p>
           </div>
+          {hasGroupStage && (
+            <Link
+              to={groupsHref}
+              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-2 font-semibold transition-colors shrink-0"
+              title="Xem lại danh sách bảng đấu và kết quả vòng bảng"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              <span>Xem vòng bảng</span>
+            </Link>
+          )}
         </div>
       </div>
 

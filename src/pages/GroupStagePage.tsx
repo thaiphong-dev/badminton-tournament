@@ -2,12 +2,18 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFeatures } from '@/lib/hooks/useFeatures'
-import { ArrowLeft, Trophy, Users, LayoutGrid, Loader2, ClipboardList, Grid, Download } from 'lucide-react'
+import {
+  ArrowLeft, Trophy, Users, LayoutGrid, Loader2,
+  ClipboardList, Grid, Download, ImageDown, ChevronRight
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { showToast } from '@/lib/hooks/useApiError'
 import { STATUS_LABELS, DISCIPLINE_LABELS, DISCIPLINE_ICONS, EVENT_STATUS_LABELS, EVENT_STATUS_BADGE } from '@/lib/constants'
 import { exportScheduleToExcel } from '@/lib/utils/exportResults'
 import { calculateStandings } from '@/lib/utils/standingsCalculator'
+import { downloadElementAsImage } from '@/lib/utils/downloadImage'
+import { buildClubColorMap } from '@/components/groups/GroupCard'
+import { cn } from '@/lib/utils/cn'
 import { GroupTableSkeleton } from '@/components/ui/Skeleton'
 import Badge from '@/components/ui/Badge'
 import GroupRandomizer from '@/components/groups/GroupRandomizer'
@@ -50,7 +56,7 @@ export default function GroupStagePage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
 
-  const [activeTab, setActiveTab]   = useState({ type: 'group', idx: 0 })
+  const [activeTab, setActiveTab]   = useState({ type: 'overview', idx: 0 })
   const [scoreMatch, setScoreMatch] = useState(null)
   const [drawMode, setDrawMode]     = useState('auto') // 'auto' | 'lottery'
   const [umpireMap, setUmpireMap]   = useState({})     // umpireId → { name, phone }
@@ -393,9 +399,28 @@ export default function GroupStagePage() {
           {/* Tab bar */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="flex items-stretch border-b border-gray-200">
-              {/* Group tabs */}
+              {/* Tabs list */}
               <div className="flex-1 overflow-x-auto">
                 <div className="flex min-w-max">
+                  {/* Overview / All Groups tab */}
+                  <button
+                    onClick={() => setActiveTab({ type: 'overview', idx: 0 })}
+                    className={`flex flex-col items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab.type === 'overview'
+                        ? 'border-blue-600 text-blue-600 bg-blue-50 font-bold'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      Danh sách bảng
+                    </span>
+                    <span className="text-xs mt-0.5 text-gray-400">
+                      {enrichedGroups.length} bảng · {players.length} VĐV
+                    </span>
+                  </button>
+
+                  {/* Individual group tabs */}
                   {enrichedGroups.map((g, idx) => {
                     const label  = String.fromCharCode(65 + idx)
                     const active = activeTab.type === 'group' && activeTab.idx === idx
@@ -404,14 +429,14 @@ export default function GroupStagePage() {
                       <button
                         key={g.id}
                         onClick={() => setActiveTab({ type: 'group', idx })}
-                        className={`flex flex-col items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                        className={`flex flex-col items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                           active
-                            ? 'border-blue-600 text-blue-600 bg-blue-50'
+                            ? 'border-blue-600 text-blue-600 bg-blue-50 font-bold'
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                         }`}
                       >
                         <span>Bảng {label}</span>
-                        <span className={`text-xs mt-0.5 ${done ? 'text-green-500' : active ? 'text-blue-400' : 'text-gray-400'}`}>
+                        <span className={`text-xs mt-0.5 ${done ? 'text-green-500 font-medium' : active ? 'text-blue-400' : 'text-gray-400'}`}>
                           {done ? '✓ xong' : `${g.completed}/${g.total}`}
                         </span>
                       </button>
@@ -420,10 +445,10 @@ export default function GroupStagePage() {
 
                   {/* Courts tab */}
                   <button
-                    onClick={() => setActiveTab({ type: 'courts' })}
-                    className={`flex flex-col items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    onClick={() => setActiveTab({ type: 'courts', idx: 0 })}
+                    className={`flex flex-col items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                       activeTab.type === 'courts'
-                        ? 'border-blue-600 text-blue-600 bg-blue-50'
+                        ? 'border-blue-600 text-blue-600 bg-blue-50 font-bold'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                     }`}
                   >
@@ -449,6 +474,15 @@ export default function GroupStagePage() {
               )}
             </div>
 
+            {activeTab.type === 'overview' && (
+              <AllGroupsOverview
+                groups={enrichedGroups}
+                players={players}
+                tournament={tournament}
+                event={event}
+                onSelectGroup={(idx) => setActiveTab({ type: 'group', idx })}
+              />
+            )}
             {activeTab.type === 'group' && enrichedGroups[activeTab.idx] && (
               <GroupView
                 group={enrichedGroups[activeTab.idx]}
@@ -459,6 +493,7 @@ export default function GroupStagePage() {
                 umpireMap={umpireMap}
                 onAssignUmpire={canUseUmpire ? setAssignMatch : null}
                 onViewRally={setRallyMatch}
+                onBackToOverview={() => setActiveTab({ type: 'overview', idx: 0 })}
               />
             )}
             {activeTab.type === 'courts' && (
@@ -567,25 +602,199 @@ export default function GroupStagePage() {
   )
 }
 
+// ─── AllGroupsOverview ────────────────────────────────────────────────────────
+
+function AllGroupsOverview({
+  groups,
+  players,
+  tournament,
+  event,
+  onSelectGroup,
+}) {
+  const [downloading, setDownloading] = useState(false)
+  const overviewRef = useRef(null)
+
+  const clubColorMap = useMemo(() => buildClubColorMap(players), [players])
+  const disciplineLabel = event ? (DISCIPLINE_LABELS[event.discipline] ?? event.name) : null
+
+  async function handleDownload() {
+    if (!overviewRef.current) return
+    setDownloading(true)
+    try {
+      const safeName = (event?.name || tournament?.name || 'danh_sach_bang_dau').replace(/[\\/:*?"<>|]/g, '_')
+      await downloadElementAsImage(overviewRef.current, `${safeName}_danh_sach_bang_dau.png`)
+      showToast('✓ Đã tải ảnh danh sách bảng đấu', 'success')
+    } catch (err: any) {
+      showToast(`Lỗi khi tải ảnh: ${err.message}`, 'error')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const totalMatches = groups.reduce((s, g) => s + g.total, 0)
+  const completedMatches = groups.reduce((s, g) => s + g.completed, 0)
+
+  return (
+    <div className="p-5 space-y-6">
+      {/* Top action / summary bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4">
+        <div className="flex items-center gap-3 sm:gap-6 flex-wrap text-sm">
+          <div className="flex items-center gap-1.5 font-semibold text-blue-900">
+            <Users className="w-4 h-4 text-blue-600" />
+            <span>{players.length} VĐV</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-semibold text-blue-900">
+            <LayoutGrid className="w-4 h-4 text-blue-600" />
+            <span>{groups.length} bảng đấu</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-blue-700">
+            <span className="w-2 h-2 rounded-full bg-blue-500" />
+            <span>{completedMatches}/{totalMatches} trận hoàn tất</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-3.5 py-2 transition-all shadow-xs disabled:opacity-50"
+            title="Tải ảnh danh sách bảng đấu về máy"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                <span>Đang tải...</span>
+              </>
+            ) : (
+              <>
+                <ImageDown className="w-3.5 h-3.5 text-blue-600" />
+                <span>Tải ảnh bảng đấu</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Group Cards Grid for viewing / capturing as image */}
+      <div ref={overviewRef} className="bg-white p-4 rounded-xl border border-gray-100">
+        {/* Banner shown in exported image / header */}
+        <div className="mb-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900 text-base sm:text-lg">
+              {disciplineLabel ? `${tournament.name} — ${disciplineLabel}` : tournament.name}
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Sơ đồ chia bảng · {groups.length} bảng · {players.length} VĐV
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+              Vòng bảng
+            </span>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {groups.map((group, idx) => {
+            const label = String.fromCharCode(65 + idx)
+            const done = group.completed === group.total && group.total > 0
+            return (
+              <div
+                key={group.id}
+                className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs hover:shadow-md transition-shadow flex flex-col"
+              >
+                {/* Header */}
+                <div className="bg-linear-to-r from-blue-600 to-indigo-600 px-4 py-2.5 flex items-center justify-between text-white">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm tracking-wide">Bảng {label}</span>
+                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-normal">
+                      {group.players.length} VĐV
+                    </span>
+                  </div>
+                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                    done ? 'bg-green-500/80 text-white' : 'bg-white/20 text-blue-100'
+                  }`}>
+                    {done ? '✓ Xong' : `${group.completed}/${group.total} trận`}
+                  </span>
+                </div>
+
+                {/* Players List */}
+                <div className="p-3 flex-1">
+                  <ul className="divide-y divide-gray-50">
+                    {group.players.map((p, pIdx) => {
+                      const isTuDo = p.club === 'Tự do'
+                      const colorClass = isTuDo
+                        ? 'bg-gray-100 text-gray-500'
+                        : (clubColorMap[p.club] ?? 'bg-blue-100 text-blue-700')
+                      return (
+                        <li key={p.id || pIdx} className="py-2 px-1 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-medium text-gray-400 w-4 shrink-0">
+                              {pIdx + 1}
+                            </span>
+                            <span className="text-sm font-medium text-gray-900 truncate">
+                              {p.name}
+                            </span>
+                          </div>
+                          <span className={cn('text-[11px] px-2 py-0.5 rounded-full shrink-0 font-medium', colorClass)}>
+                            {p.club}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+
+                {/* Footer action */}
+                <div className="p-2.5 bg-gray-50 border-t border-gray-100 mt-auto">
+                  <button
+                    onClick={() => onSelectGroup(idx)}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50/80 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <span>Xem lịch đấu & BXH</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── GroupView ────────────────────────────────────────────────────────────────
 
-function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled = false, umpireMap = {}, onAssignUmpire = null, onViewRally = null }) {
+function GroupView({ group, groupIdx, playerMap, onMatchClick, attendanceEnabled = false, umpireMap = {}, onAssignUmpire = null, onViewRally = null, onBackToOverview = null }) {
   const label    = String.fromCharCode(65 + groupIdx)
   const done     = group.completed === group.total && group.total > 0
   const forfeits = group.matches.filter(m => m.is_forfeit).length
 
   return (
     <div className="p-5">
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h3 className="font-bold text-gray-900">Bảng {label}</h3>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {group.players.length} VĐV · {group.completed}/{group.total} trận đã xong
-            {done && <span className="ml-2 text-green-600 font-medium">✓ Hoàn thành</span>}
-            {forfeits > 0 && (
-              <span className="ml-2 text-orange-500 text-xs">· {forfeits} trận W/O</span>
-            )}
-          </p>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          {onBackToOverview && (
+            <button
+              onClick={onBackToOverview}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+              title="Xem danh sách tất cả các bảng đấu"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Tất cả bảng
+            </button>
+          )}
+          <div>
+            <h3 className="font-bold text-gray-900">Bảng {label}</h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {group.players.length} VĐV · {group.completed}/{group.total} trận đã xong
+              {done && <span className="ml-2 text-green-600 font-medium">✓ Hoàn thành</span>}
+              {forfeits > 0 && (
+                <span className="ml-2 text-orange-500 text-xs">· {forfeits} trận W/O</span>
+              )}
+            </p>
+          </div>
         </div>
         {!done && group.completed > 0 && (
           <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
